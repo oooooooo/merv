@@ -4,12 +4,20 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const USAGE = `Usage: merv [-T theme] input.md
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+const USAGE = `Usage: merv [-T theme] [-o output.pdf] [--verbose] input.md
+       merv -v | --version
+       merv -h | --help
 
 Options:
-  -T, --theme   Vivliostyle theme (default: @vivliostyle/theme-techbook)
-  -h, --help    Show this help
+  -T, --theme     Vivliostyle theme (default: @vivliostyle/theme-techbook)
+  -o, --output    Output PDF path (default: <input>.pdf)
+  -v, --version   Show version
+      --verbose   Show full output from mermaid-cli/vivliostyle
+  -h, --help      Show this help
 
 Themes:
   @vivliostyle/theme-techbook
@@ -18,6 +26,11 @@ Themes:
   @vivliostyle/theme-slide
   @vivliostyle/theme-gutenberg
 `;
+
+function getVersion() {
+  const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
+  return pkg.version;
+}
 
 function resolveBin(pkgName, binName) {
   const req = createRequire(import.meta.url);
@@ -33,18 +46,27 @@ function resolveBin(pkgName, binName) {
   throw new Error(`Cannot find installed package "${pkgName}"`);
 }
 
-function runTool(pkgName, binName, args) {
+function runTool(pkgName, binName, args, verbose) {
   const binPath = resolveBin(pkgName, binName);
-  const result = spawnSync(process.execPath, [binPath, ...args], { stdio: 'inherit' });
+  const stdio = verbose ? 'inherit' : ['ignore', 'pipe', 'pipe'];
+  const result = spawnSync(process.execPath, [binPath, ...args], { stdio });
   if (result.error) {
     console.error(`Failed to launch ${binName}: ${result.error.message}`);
     process.exit(1);
   }
-  if (result.status !== 0) process.exit(result.status ?? 1);
+  if (result.status !== 0) {
+    if (!verbose) {
+      if (result.stdout?.length) process.stderr.write(result.stdout);
+      if (result.stderr?.length) process.stderr.write(result.stderr);
+    }
+    process.exit(result.status ?? 1);
+  }
 }
 
 function parseArgs(argv) {
   let theme = '@vivliostyle/theme-techbook';
+  let output;
+  let verbose = false;
   let input;
 
   for (let i = 0; i < argv.length; i++) {
@@ -52,6 +74,14 @@ function parseArgs(argv) {
     if (arg === '-T' || arg === '--theme') {
       i++;
       theme = argv[i];
+    } else if (arg === '-o' || arg === '--output') {
+      i++;
+      output = argv[i];
+    } else if (arg === '--verbose') {
+      verbose = true;
+    } else if (arg === '-v' || arg === '--version') {
+      console.log(getVersion());
+      process.exit(0);
     } else if (arg === '-h' || arg === '--help') {
       process.stdout.write(USAGE);
       process.exit(0);
@@ -68,11 +98,11 @@ function parseArgs(argv) {
     process.exit(1);
   }
 
-  return { theme, input };
+  return { theme, output, verbose, input };
 }
 
 function main() {
-  const { theme, input } = parseArgs(process.argv.slice(2));
+  const { theme, output, verbose, input } = parseArgs(process.argv.slice(2));
 
   // Persist workspace so vivliostyle does not reinstall themes every run.
   // (themes are installed under <workdir>/themes.)
@@ -85,11 +115,11 @@ function main() {
   }
 
   const base = input.endsWith('.md') ? input.slice(0, -3) : input;
-  const pdf = path.resolve(base + '.pdf');
+  const pdf = output ? path.resolve(output) : path.resolve(base + '.pdf');
   const outMd = path.join(workdir, 'out.md');
 
-  runTool('@mermaid-js/mermaid-cli', 'mmdc', ['-i', input, '-o', outMd, '-a', workdir]);
-  runTool('@vivliostyle/cli', 'vivliostyle', ['build', outMd, '-s', 'A4', '-T', theme, '-o', pdf]);
+  runTool('@mermaid-js/mermaid-cli', 'mmdc', ['-i', input, '-o', outMd, '-a', workdir], verbose);
+  runTool('@vivliostyle/cli', 'vivliostyle', ['build', outMd, '-s', 'A4', '-T', theme, '-o', pdf], verbose);
 }
 
 main();
