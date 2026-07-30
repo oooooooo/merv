@@ -1,0 +1,34 @@
+{
+  "name": "merv-cli",
+  "version": "0.1.0",
+  "description": "Render Markdown with Mermaid diagrams to a themed PDF via mermaid-cli + Vivliostyle.",
+  "type": "module",
+  "bin": {
+    "merv": "./merv.js"
+  },
+  "files": [
+    "merv.js"
+  ],
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "test": "node test/smoke.test.mjs"
+  },
+  "dependencies": {
+    "@mermaid-js/mermaid-cli": "11.16.0",
+    "@vivliostyle/cli": "11.1.0"
+  },
+  "license": "MIT",
+  "keywords": [
+    "mermaid",
+    "vivliostyle",
+    "markdown",
+    "pdf",
+    "cli"
+  ],
+  "allowScripts": {
+    "puppeteer@25.4.0": true,
+    "fsevents@2.3.3": true
+  }
+}
