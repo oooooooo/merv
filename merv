@@ -1,0 +1,71 @@
+#!/bin/bash
+# mermaid-cli / vivliostyle-cli are fetched on demand via npx, so no global
+# install is needed (avoids bloating the global npm cache with puppeteer/chrome).
+
+set -euo pipefail
+
+mmdc() { npx --yes @mermaid-js/mermaid-cli "$@"; }
+vivliostyle() { npx --yes @vivliostyle/cli "$@"; }
+
+theme=@vivliostyle/theme-techbook
+input=
+
+usage() {
+  cat <<'EOF'
+Usage: merv [-T theme] input.md
+
+Options:
+  -T, --theme   Vivliostyle theme (default: @vivliostyle/theme-techbook)
+  -h, --help    Show this help
+
+Themes:
+  @vivliostyle/theme-techbook
+  @vivliostyle/theme-academic
+  @vivliostyle/theme-bunko
+  @vivliostyle/theme-slide
+  @vivliostyle/theme-gutenberg
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -T|--theme)
+      theme=$2
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      if [[ -n "$input" ]]; then
+        echo "Unexpected argument: $1" >&2
+        exit 1
+      fi
+      input=$1
+      shift
+      ;;
+  esac
+done
+
+if [[ -z "$input" ]]; then
+  usage >&2
+  exit 1
+fi
+
+# Persist workspace so vivliostyle does not reinstall themes every run.
+# (themes are installed under <input-dir>/themes; mktemp would wipe them.)
+workdir="${XDG_CACHE_HOME:-$HOME/.cache}/merv/work"
+mkdir -p "$workdir"
+find "$workdir" -mindepth 1 -maxdepth 1 ! -name themes -exec rm -rf {} +
+
+pdf="${input%.md}.pdf"
+# Resolve to absolute path so output stays next to the input regardless of workdir.
+case "$pdf" in
+  /*) ;;
+  *) pdf="$(pwd)/$pdf" ;;
+esac
+
+mmdc -i "$input" -o "$workdir/out.md" -a "$workdir"
+vivliostyle build "$workdir/out.md" -s A4 -T "$theme" -o "$pdf"
+
