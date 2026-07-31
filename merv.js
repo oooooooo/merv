@@ -150,14 +150,25 @@ function parseArgs(argv) {
 function main() {
   const { theme, output, verbose, input } = parseArgs(process.argv.slice(2));
 
-  // Persist workspace so vivliostyle does not reinstall themes every run.
-  // (themes are installed under <workdir>/themes.)
-  const workdir = path.join(process.env.XDG_CACHE_HOME || path.join(os.homedir(), '.cache'), 'merv', 'work');
-  fs.mkdirSync(workdir, { recursive: true });
-  for (const entry of fs.readdirSync(workdir)) {
-    if (entry !== 'themes') {
-      fs.rmSync(path.join(workdir, entry), { recursive: true, force: true });
-    }
+  const cacheRoot = path.join(
+    process.env.XDG_CACHE_HOME || path.join(os.homedir(), '.cache'),
+    'merv'
+  );
+  // A workdir per run: two merv processes sharing one would overwrite each
+  // other's intermediate markdown and each emit the other's document.
+  fs.mkdirSync(cacheRoot, { recursive: true });
+  const workdir = fs.mkdtempSync(path.join(cacheRoot, 'work-'));
+  // runTool exits the process on failure, so clean up from the exit hook.
+  process.on('exit', () => fs.rmSync(workdir, { recursive: true, force: true }));
+
+  // vivliostyle installs themes under <cwd>/themes; link that one directory to a
+  // shared copy so only the very first run pays for the install. A run that has
+  // nothing to link to installs privately and publishes the result afterwards,
+  // which keeps concurrent first runs out of each other's install tree.
+  const themes = path.join(cacheRoot, 'themes');
+  const themesShared = fs.existsSync(themes);
+  if (themesShared) {
+    fs.symlinkSync(themes, path.join(workdir, 'themes'), 'junction');
   }
 
   const base = input.endsWith('.md') ? input.slice(0, -3) : input;
@@ -169,6 +180,14 @@ function main() {
   // Run from workdir: vivliostyle auto-loads vivliostyle.config.* from its cwd,
   // and such a config would override the entry/output we pass on the command line.
   runTool('@vivliostyle/cli', 'vivliostyle', ['build', outMd, '-s', 'A4', '-T', theme, '-o', pdf], verbose, workdir);
+
+  if (!themesShared) {
+    try {
+      fs.renameSync(path.join(workdir, 'themes'), themes);
+    } catch {
+      // Another run published its own install first; ours dies with the workdir.
+    }
+  }
 }
 
 main();
