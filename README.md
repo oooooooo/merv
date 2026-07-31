@@ -4,9 +4,9 @@ Markdown with Mermaid → themed PDF, via
 [`@mermaid-js/mermaid-cli`](https://github.com/mermaid-js/mermaid-cli) and
 [`@vivliostyle/cli`](https://github.com/vivliostyle/vivliostyle-cli).
 
-Unlike [Marp](https://marp.app/), no `---` slide markers — layout is automatic.
+No [Marp](https://marp.app/)-style `---` slide markers — layout is automatic. For a manual page break, write `<!-- pagebreak -->`.
 
-Name: `mer`maid + `v`ivliostyle.
+`merv` = `mer`maid + `v`ivliostyle.
 
 ## Usage
 
