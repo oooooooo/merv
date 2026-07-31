@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { copyLocalAssets } from '../merv.js';
+import { prepareMarkdown } from '../merv.js';
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'merv-assets-'));
 const srcDir = path.join(tmp, 'src');
@@ -56,7 +56,7 @@ const mdPath = path.join(workdir, 'out.md');
 fs.writeFileSync(mdPath, input);
 
 try {
-  copyLocalAssets(mdPath, srcDir, workdir);
+  prepareMarkdown(mdPath, srcDir, workdir);
   const md = fs.readFileSync(mdPath, 'utf8');
   const line = (label) => md.split('\n').find((l) => l.startsWith(label));
 

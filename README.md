@@ -16,7 +16,7 @@ on demand. Output is written next to the input as `input.pdf`.
 
 ### Options
 
-```
+```text
 Usage: merv [-T theme] [-o output.pdf] [--verbose] input.md
        merv -v | --version
        merv -h | --help
@@ -34,11 +34,29 @@ Themes:
   @vivliostyle/theme-bunko
   @vivliostyle/theme-slide
   @vivliostyle/theme-gutenberg
+
+Markup:
+  <!-- pagebreak -->   Start a new page here
 ```
 
 By default, `merv` only prints something if `mermaid-cli` or `vivliostyle`
 fail (in which case their output is shown to help diagnose the error). Pass
 `--verbose` to always stream their normal output.
+
+### Page breaks
+
+Write `<!-- pagebreak -->` to start a new page there:
+
+```md
+The end of one page.
+
+<!-- pagebreak -->
+
+The start of the next.
+```
+
+The marker is matched case-insensitively, works with any theme, and is
+ignored inside code blocks and code spans.
 
 ## Requirements
 
@@ -46,7 +64,7 @@ Node.js **>= 22.12.0** (required transitively by `@vivliostyle/cli`).
 
 ## Cache directory
 
-Intermediate build output is kept in a persistent cache directory
-(`$XDG_CACHE_HOME/merv/work`, falling back to `~/.cache/merv/work`) so that
-Vivliostyle themes don't get reinstalled on every run. This directory is
-wiped (except the `themes` subfolder) at the start of each invocation.
+Each run builds in its own directory under `$XDG_CACHE_HOME/merv` (falling
+back to `~/.cache/merv`) and removes it when it exits, so concurrent runs
+stay out of each other's way. Installed Vivliostyle themes are kept in
+`themes/` next to it and reused, so only the first run pays for the install.

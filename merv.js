@@ -26,6 +26,9 @@ Themes:
   @vivliostyle/theme-bunko
   @vivliostyle/theme-slide
   @vivliostyle/theme-gutenberg
+
+Markup:
+  <!-- pagebreak -->   Start a new page here
 `;
 
 function getVersion() {
@@ -81,10 +84,10 @@ function resolveAsset(ref, srcDir, workdir) {
   return null;
 }
 
-// Vivliostyle renders the intermediate markdown from the cache workdir, so
-// images the source referenced relative to its own directory fall outside the
-// served root. Copy them in and repoint the references at the copies.
-export function copyLocalAssets(mdPath, srcDir, workdir) {
+// Rework the markdown mermaid-cli produced into something vivliostyle can render
+// from the workdir: copy in the assets it still points at outside, and turn the
+// page break markers into elements vivliostyle breaks on.
+export function prepareMarkdown(mdPath, srcDir, workdir) {
   const assetsDir = path.join(workdir, '_assets');
   const copies = new Map();
 
@@ -103,7 +106,7 @@ export function copyLocalAssets(mdPath, srcDir, workdir) {
     return newRef;
   };
 
-  fs.writeFileSync(mdPath, rewriteReferences(fs.readFileSync(mdPath, 'utf8'), rewrite));
+  fs.writeFileSync(mdPath, transformMarkdown(fs.readFileSync(mdPath, 'utf8'), rewrite));
 }
 
 // `![alt](dest)`, allowing one level of brackets in the alt text.
@@ -112,8 +115,18 @@ const REFERENCE_DEFINITION = /^(\s{0,3}\[[^\]]+\]:\s*)(<[^>]*>|\S+)/;
 const HTML_SRC = /(<img\b[^>]*?\bsrc\s*=\s*)("[^"]*"|'[^']*'|[^\s>]+)/gi;
 const FENCE = /^ {0,3}(`{3,}|~{3,})/;
 const CODE_SPAN = /(`+[^`]*`+)/;
+const PAGE_BREAK = /<!--\s*pagebreak\s*-->/gi;
+const PAGE_BREAK_HTML = '<div class="merv-pagebreak"></div>';
+// Passed to vivliostyle so the break outranks the theme's own page rules. The
+// :has() rule is for themes that lay a section out as a fixed height flex box
+// (theme-slide does): a break inside one is never taken, so the container has to
+// be turned back into ordinary block flow first.
+const PAGE_BREAK_CSS = [
+  '.merv-pagebreak { break-after: page !important; page-break-after: always !important; }',
+  ':has(> .merv-pagebreak) { display: block !important; height: auto !important; }',
+].join('\n');
 
-function rewriteReferences(md, rewrite) {
+function transformMarkdown(md, rewrite) {
   // A rewritten name is plain ASCII with no spaces, so whatever delimiters the
   // source used around the destination are no longer needed -- except the
   // quotes in HTML, which are part of the attribute.
@@ -149,6 +162,7 @@ function rewriteReferences(md, rewrite) {
         .map((part, i) => {
           if (i % 2 === 1) return part;
           const rewritten = part
+            .replace(PAGE_BREAK, PAGE_BREAK_HTML)
             .replace(INLINE_IMAGE, (_, head, dest) => head + swap(dest))
             .replace(HTML_SRC, (_, head, dest) => head + swapAttribute(dest));
           // A definition is only one if it opens the line, and only the first
@@ -240,10 +254,16 @@ function main() {
   const outMd = path.join(workdir, 'out.md');
 
   runTool('@mermaid-js/mermaid-cli', 'mmdc', ['-i', input, '-o', outMd, '-a', workdir], verbose);
-  copyLocalAssets(outMd, path.dirname(path.resolve(input)), workdir);
+  prepareMarkdown(outMd, path.dirname(path.resolve(input)), workdir);
   // Run from workdir: vivliostyle auto-loads vivliostyle.config.* from its cwd,
   // and such a config would override the entry/output we pass on the command line.
-  runTool('@vivliostyle/cli', 'vivliostyle', ['build', outMd, '-s', 'A4', '-T', theme, '-o', pdf], verbose, workdir);
+  runTool(
+    '@vivliostyle/cli',
+    'vivliostyle',
+    ['build', outMd, '-s', 'A4', '-T', theme, '-o', pdf, '--css', PAGE_BREAK_CSS],
+    verbose,
+    workdir
+  );
 
   // Swap the freshly installed themes in so the next run starts from them. The
   // gap where no cache exists is a rename apart, and a run that hits it just
