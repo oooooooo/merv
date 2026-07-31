@@ -161,14 +161,16 @@ function main() {
   // runTool exits the process on failure, so clean up from the exit hook.
   process.on('exit', () => fs.rmSync(workdir, { recursive: true, force: true }));
 
-  // vivliostyle installs themes under <cwd>/themes; link that one directory to a
-  // shared copy so only the very first run pays for the install. A run that has
-  // nothing to link to installs privately and publishes the result afterwards,
-  // which keeps concurrent first runs out of each other's install tree.
+  // vivliostyle reinstalls <cwd>/themes on every build, so the directory cannot
+  // be shared live between runs -- two installs racing in it fail with ENOTEMPTY.
+  // Seed a private copy from the cache instead, which leaves the install with
+  // nothing to fetch, and publish it back below.
   const themes = path.join(cacheRoot, 'themes');
-  const themesShared = fs.existsSync(themes);
-  if (themesShared) {
-    fs.symlinkSync(themes, path.join(workdir, 'themes'), 'junction');
+  const stagedThemes = path.join(workdir, 'themes');
+  try {
+    fs.cpSync(themes, stagedThemes, { recursive: true });
+  } catch {
+    // No cache yet, or another run was mid-publish: install from scratch.
   }
 
   const base = input.endsWith('.md') ? input.slice(0, -3) : input;
@@ -181,12 +183,16 @@ function main() {
   // and such a config would override the entry/output we pass on the command line.
   runTool('@vivliostyle/cli', 'vivliostyle', ['build', outMd, '-s', 'A4', '-T', theme, '-o', pdf], verbose, workdir);
 
-  if (!themesShared) {
-    try {
-      fs.renameSync(path.join(workdir, 'themes'), themes);
-    } catch {
-      // Another run published its own install first; ours dies with the workdir.
-    }
+  // Swap the freshly installed themes in so the next run starts from them. The
+  // gap where no cache exists is a rename apart, and a run that hits it just
+  // installs from scratch.
+  try {
+    const replaced = `${themes}-replaced-${process.pid}`;
+    if (fs.existsSync(themes)) fs.renameSync(themes, replaced);
+    fs.renameSync(stagedThemes, themes);
+    fs.rmSync(replaced, { recursive: true, force: true });
+  } catch {
+    // Losing the cache update only costs the next run an install.
   }
 }
 
