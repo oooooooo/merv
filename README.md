@@ -19,8 +19,12 @@ npm install -g merv-cli
 merv-cli input.md && open input.pdf
 ```
 
-Needs Node.js **>= 22.12.0**. Either route pulls in a browser to render with,
-so budget a few hundred MB and a slow first run; afterwards it is cached.
+Needs Node.js **>= 22.12.0**, the floor `@vivliostyle/cli` sets.
+
+Both tools underneath draw pages with a headless Chrome, which Puppeteer
+downloads on install into `~/.cache/puppeteer` — around 650 MB, and the reason
+the first run is a slow one. It is shared between projects and reused after
+that.
 
 ### Options
 
