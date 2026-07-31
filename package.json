@@ -1,5 +1,5 @@
 {
-  "name": "merv-cli",
+  "name": "@noooooooode/merv",
   "version": "0.1.0",
   "description": "Markdown to PDF, using Mermaid.js and Vivliostyle CLI.",
   "type": "module",
@@ -24,6 +24,9 @@
     "url": "https://github.com/oooooooo/merv-cli/issues"
   },
   "homepage": "https://github.com/oooooooo/merv-cli#readme",
+  "publishConfig": {
+    "access": "public"
+  },
   "author": "oooooooo",
   "dependencies": {
     "@mermaid-js/mermaid-cli": "11.16.0",

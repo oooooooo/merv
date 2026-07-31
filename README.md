@@ -1,22 +1,24 @@
-# merv-cli
+# merv
 
 Markdown with Mermaid → themed PDF, via
 [`@mermaid-js/mermaid-cli`](https://github.com/mermaid-js/mermaid-cli) and
 [`@vivliostyle/cli`](https://github.com/vivliostyle/vivliostyle-cli).
+
 Unlike [Marp](https://marp.app/), no `---` slide markers — layout is automatic.
+
 Name: `mer`maid + `v`ivliostyle.
 
 ## Usage
 
 ```sh
-npx merv-cli input.md && open input.pdf
+npx @noooooooode/merv input.md && open input.pdf
 ```
 
 Or
 
 ```sh
-npm install -g merv-cli
-merv-cli input.md && open input.pdf
+npm install -g @noooooooode/merv
+merv input.md && open input.pdf
 ```
 
 Needs Node.js **>= 22.12.0**, the floor `@vivliostyle/cli` sets.
