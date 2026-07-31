@@ -46,10 +46,10 @@ function resolveBin(pkgName, binName) {
   throw new Error(`Cannot find installed package "${pkgName}"`);
 }
 
-function runTool(pkgName, binName, args, verbose) {
+function runTool(pkgName, binName, args, verbose, cwd) {
   const binPath = resolveBin(pkgName, binName);
   const stdio = verbose ? 'inherit' : ['ignore', 'pipe', 'pipe'];
-  const result = spawnSync(process.execPath, [binPath, ...args], { stdio });
+  const result = spawnSync(process.execPath, [binPath, ...args], { stdio, cwd });
   if (result.error) {
     console.error(`Failed to launch ${binName}: ${result.error.message}`);
     process.exit(1);
@@ -119,7 +119,9 @@ function main() {
   const outMd = path.join(workdir, 'out.md');
 
   runTool('@mermaid-js/mermaid-cli', 'mmdc', ['-i', input, '-o', outMd, '-a', workdir], verbose);
-  runTool('@vivliostyle/cli', 'vivliostyle', ['build', outMd, '-s', 'A4', '-T', theme, '-o', pdf], verbose);
+  // Run from workdir: vivliostyle auto-loads vivliostyle.config.* from its cwd,
+  // and such a config would override the entry/output we pass on the command line.
+  runTool('@vivliostyle/cli', 'vivliostyle', ['build', outMd, '-s', 'A4', '-T', theme, '-o', pdf], verbose, workdir);
 }
 
 main();
