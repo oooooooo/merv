@@ -1,4 +1,4 @@
-# merv
+# Merv
 
 Markdown with Mermaid → themed PDF, via
 [`@mermaid-js/mermaid-cli`](https://github.com/mermaid-js/mermaid-cli) and
