@@ -18,12 +18,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/oooooooo/merv-cli.git"
+    "url": "git+https://github.com/oooooooo/merv.git"
   },
   "bugs": {
-    "url": "https://github.com/oooooooo/merv-cli/issues"
+    "url": "https://github.com/oooooooo/merv/issues"
   },
-  "homepage": "https://github.com/oooooooo/merv-cli#readme",
+  "homepage": "https://github.com/oooooooo/merv#readme",
   "publishConfig": {
     "access": "public"
   },
