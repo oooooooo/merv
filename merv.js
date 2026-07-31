@@ -6,7 +6,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const USAGE = `Usage: merv [-T theme] [-o output.pdf] [--verbose] input.md
        merv -v | --version
@@ -83,7 +84,7 @@ function resolveAsset(ref, srcDir, workdir) {
 // Vivliostyle renders the intermediate markdown from the cache workdir, so
 // images the source referenced relative to its own directory fall outside the
 // served root. Copy them in and repoint the references at the copies.
-function copyLocalAssets(mdPath, srcDir, workdir) {
+export function copyLocalAssets(mdPath, srcDir, workdir) {
   const assetsDir = path.join(workdir, '_assets');
   const copies = new Map();
 
@@ -102,11 +103,63 @@ function copyLocalAssets(mdPath, srcDir, workdir) {
     return newRef;
   };
 
-  const md = fs
-    .readFileSync(mdPath, 'utf8')
-    .replace(/(!\[[^\]]*\]\(\s*<?)([^>)\s]+)/g, (_, head, ref) => head + rewrite(ref))
-    .replace(/(<img\b[^>]*?\bsrc\s*=\s*")([^"]+)/gi, (_, head, ref) => head + rewrite(ref));
-  fs.writeFileSync(mdPath, md);
+  fs.writeFileSync(mdPath, rewriteReferences(fs.readFileSync(mdPath, 'utf8'), rewrite));
+}
+
+// `![alt](dest)`, allowing one level of brackets in the alt text.
+const INLINE_IMAGE = /(!\[(?:[^[\]]|\[[^\]]*\])*\]\(\s*)(<[^>]*>|[^()\s]*)/g;
+const REFERENCE_DEFINITION = /^(\s{0,3}\[[^\]]+\]:\s*)(<[^>]*>|\S+)/;
+const HTML_SRC = /(<img\b[^>]*?\bsrc\s*=\s*)("[^"]*"|'[^']*'|[^\s>]+)/gi;
+const FENCE = /^ {0,3}(`{3,}|~{3,})/;
+const CODE_SPAN = /(`+[^`]*`+)/;
+
+function rewriteReferences(md, rewrite) {
+  // A rewritten name is plain ASCII with no spaces, so whatever delimiters the
+  // source used around the destination are no longer needed -- except the
+  // quotes in HTML, which are part of the attribute.
+  const swap = (dest) => {
+    const bare = dest.replace(/^<([^>]*)>$/, '$1');
+    const next = rewrite(bare);
+    return next === bare ? dest : next;
+  };
+  const swapAttribute = (dest) => {
+    const quote = dest[0] === '"' || dest[0] === "'" ? dest[0] : '';
+    const bare = quote ? dest.slice(1, -1) : dest;
+    const next = rewrite(bare);
+    return next === bare ? dest : `${quote}${next}${quote}`;
+  };
+
+  let fence = null;
+  return md
+    .split('\n')
+    .map((line) => {
+      // Code is quoted markdown, not markup: rewriting it would corrupt a
+      // document that happens to be about writing markdown.
+      const fenceMatch = line.match(FENCE);
+      if (fence) {
+        if (fenceMatch && fenceMatch[1].startsWith(fence)) fence = null;
+        return line;
+      }
+      if (fenceMatch) {
+        fence = fenceMatch[1];
+        return line;
+      }
+      return line
+        .split(CODE_SPAN)
+        .map((part, i) => {
+          if (i % 2 === 1) return part;
+          const rewritten = part
+            .replace(INLINE_IMAGE, (_, head, dest) => head + swap(dest))
+            .replace(HTML_SRC, (_, head, dest) => head + swapAttribute(dest));
+          // A definition is only one if it opens the line, and only the first
+          // part of the split still knows where the line began.
+          return i === 0
+            ? rewritten.replace(REFERENCE_DEFINITION, (_, head, dest) => head + swap(dest))
+            : rewritten;
+        })
+        .join('');
+    })
+    .join('\n');
 }
 
 function parseArgs(argv) {
@@ -205,4 +258,7 @@ function main() {
   }
 }
 
-main();
+// Importing this file (the tests do) must not start a build. The bin entry is a
+// symlink, so compare against what it resolves to.
+const entry = process.argv[1] && fs.existsSync(process.argv[1]) ? fs.realpathSync(process.argv[1]) : '';
+if (entry === __filename) main();
