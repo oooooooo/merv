@@ -4,7 +4,7 @@
   "description": "Markdown to PDF, using Mermaid.js and Vivliostyle CLI.",
   "type": "module",
   "bin": {
-    "merv": "./merv.js"
+    "merv": "merv.js"
   },
   "files": [
     "merv.js"
