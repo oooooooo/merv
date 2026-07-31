@@ -1,9 +1,16 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import zlib from 'node:zlib';
+import { fileURLToPath } from 'node:url';
 
 import { prepareMarkdown } from '../merv.js';
+import { imageSizes } from './pdf.mjs';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const merv = path.join(__dirname, '..', 'merv.js');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'merv-assets-'));
 const srcDir = path.join(tmp, 'src');
@@ -96,7 +103,48 @@ try {
     assert.ok(fs.existsSync(path.join(workdir, ref)), `${ref} should exist`);
   }
 
+  // ...and end to end, because rewriting the reference is only half the job: the
+  // build ran from the workdir, so an image the rewrite missed reaches the PDF as
+  // Chrome's broken-image icon and the run still exits 0.
+  const doc = path.join(srcDir, 'doc.md');
+  fs.writeFileSync(doc, '# Image\n\nlocal: ![pic](./sub/pic.png)\n');
+  fs.writeFileSync(path.join(srcDir, 'sub', 'pic.png'), png(23, 7));
+  const pdf = path.join(tmp, 'doc.pdf');
+  const built = spawnSync(process.execPath, [merv, doc, '-o', pdf], { encoding: 'utf8' });
+  assert.equal(built.status, 0, `the image build should exit 0: ${built.stdout}${built.stderr}`);
+
+  const sizes = imageSizes(pdf);
+  assert.ok(sizes.includes('23x7'), `the image should be embedded at its own size, got ${sizes}`);
+  assert.ok(!sizes.includes('14x16'), `a broken-image icon was embedded instead, got ${sizes}`);
+
   console.log('assets test passed');
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });
+}
+
+// A grayscale PNG of the given size, so the PDF can be searched for an image of
+// exactly those dimensions -- the broken-image icon Chrome substitutes is 14x16.
+function png(width, height) {
+  const chunk = (type, data) => {
+    const body = Buffer.concat([Buffer.from(type, 'latin1'), data]);
+    const length = Buffer.alloc(4);
+    length.writeUInt32BE(data.length);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(zlib.crc32(body));
+    return Buffer.concat([length, body, crc]);
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0);
+  header.writeUInt32BE(height, 4);
+  header[8] = 8; // 8 bits per sample
+  // A row is a filter byte followed by one gray sample per pixel.
+  const raw = Buffer.concat(
+    Array.from({ length: height }, () => Buffer.concat([Buffer.from([0]), Buffer.alloc(width, 0x40)]))
+  );
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', header),
+    chunk('IDAT', zlib.deflateSync(raw)),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
 }

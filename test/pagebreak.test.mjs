@@ -3,36 +3,15 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 
 import { prepareMarkdown } from '../merv.js';
+import { pageCount } from './pdf.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const merv = path.join(__dirname, '..', 'merv.js');
 const fixture = path.join(__dirname, 'fixtures', 'pagebreak.md');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'merv-pagebreak-'));
-
-// The page tree records its size, but PDF 1.5 keeps it in a compressed object
-// stream, so the whole file has to be inflated before it can be read.
-function pageCount(pdf) {
-  const buf = fs.readFileSync(pdf);
-  let text = '';
-  for (let i = buf.indexOf('stream'); i >= 0; i = buf.indexOf('stream', i)) {
-    let start = i + 6;
-    if (buf[start] === 13) start++;
-    if (buf[start] === 10) start++;
-    const end = buf.indexOf('endstream', start);
-    if (end < 0) break;
-    try {
-      text += zlib.inflateSync(buf.subarray(start, end)).toString('latin1');
-    } catch {}
-    i = end + 9;
-  }
-  const counts = [...text.matchAll(/\/Count\s+(\d+)/g)].map((m) => Number(m[1]));
-  assert.ok(counts.length > 0, `could not read a page count from ${pdf}`);
-  return Math.max(...counts);
-}
 
 function build(input, output, theme) {
   const args = [merv, input, '-o', output, ...(theme ? ['-T', theme] : [])];

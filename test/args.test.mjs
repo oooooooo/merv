@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -28,10 +29,22 @@ for (const flag of ['--thme', '-x', '-']) {
   assert.match(result.out, /Unknown option/, `${flag} should be reported as unknown`);
 }
 
-// A filename is still a filename even when it follows a valid flag.
+// merv renders one file, so a stray second one is a mistake worth naming rather
+// than a document to silently ignore.
+const twoInputs = run(sample, sample);
+assert.equal(twoInputs.status, 1, 'a second input should exit 1');
+assert.match(twoInputs.out, /Unexpected argument/, 'a second input should be reported');
+
 const help = run('-h');
 assert.equal(help.status, 0, '-h should exit 0');
 assert.match(help.out, /Usage: merv/, '-h should print usage');
+
+// The version is read from a package.json found relative to merv.js, which the
+// bin symlink and the "files" field both have a say in.
+const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+const version = run('-v');
+assert.equal(version.status, 0, '-v should exit 0');
+assert.equal(version.out.trim(), pkg.version, '-v should print the package version');
 
 const noArgs = run();
 assert.equal(noArgs.status, 1, 'no arguments should exit 1');
