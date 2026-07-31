@@ -1,4 +1,4 @@
-# CLAUDE.md
+# Merv
 
 `merv` is a single-file ESM CLI (`merv.js`) that runs `mmdc` and then
 `vivliostyle build` as child processes. Everything except the tests lives in
