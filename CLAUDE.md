@@ -1,0 +1,58 @@
+# CLAUDE.md
+
+`merv` is a single-file ESM CLI (`merv.js`) that runs `mmdc` and then
+`vivliostyle build` as child processes. Everything except the tests lives in
+that one file. See README.md for what the tool does; this file is only for
+what is not obvious from reading the code.
+
+## Tests
+
+Run `npm test`. The script globs `"test/*.test.mjs"` deliberately — a bare
+`node --test test/` fails with MODULE_NOT_FOUND here.
+
+Each test file is a plain top-level script, not a suite of `test()` blocks: it
+asserts, prints `<name> test passed`, and cleans up in a `finally`. Follow that
+shape. Files named `*.mjs` without `.test` (`test/pdf.mjs`) are helpers and are
+not picked up by the glob.
+
+Most of the suite's runtime is real PDF builds at roughly 4s each, so add one
+only when a unit assertion genuinely cannot show the same thing — and make it
+assert an *effect*. A build that merely exits 0 proves almost nothing: dropped
+arguments and unrendered images both still exit 0.
+
+There are no poppler tools in this environment. Read PDFs through
+`test/pdf.mjs` (`readPdf`, `pageCount`, `pageWidth`, `imageSizes`). Note that
+object dictionaries sit in the file uncompressed while the page tree is inside
+a compressed object stream, which is why `readPdf` returns both.
+
+## Invariants that look like cruft but are not
+
+Each of these was a bug once. Confirm you understand the failure before
+undoing any of them.
+
+- **The page break CSS travels inside the document** as a `<style>` appended by
+  `prepareMarkdown`, not via vivliostyle's `--css`. `--css` holds a single
+  value, so a `merv.json` passing its own would silently replace the rules.
+  It is appended, never prepended, so YAML frontmatter stays on line 1.
+- **The `:has(> .merv-pagebreak)` rule** exists for themes that lay a section
+  out as a fixed-height flex box (theme-slide): a break inside one is never
+  taken. Test any page break change against theme-slide, not just the default.
+- **Each run gets its own `mkdtemp` workdir, and the theme cache is staged into
+  it and swapped back by rename.** vivliostyle reinstalls `<cwd>/themes` on
+  every build, so a shared directory makes concurrent runs race. Cleanup hangs
+  off `process.on('exit')` because `runTool` calls `process.exit`.
+- **Config tokens are appended after merv's own arguments** so they win where
+  the child tool lets the last occurrence win.
+- **`bin` is `merv.js`, not `./merv.js`.** npm strips a `./` target while
+  publishing, which would ship a package with no command.
+
+## Conventions
+
+- Chat in Japanese; code, comments, docs and commit messages in English.
+- Commits follow the repo's `conventional-commits` skill: the body must say
+  *why*, and asking beats guessing.
+- Comments explain why, not what — see the `code-comments` skill.
+- Run `markdownlint` on any Markdown you touch.
+- `git diff` here opens an external side-by-side viewer; use
+  `git --no-pager diff --no-ext-diff` for output you need to read. `git add -p`
+  is unavailable, and `du` is aliased to `dust`.
