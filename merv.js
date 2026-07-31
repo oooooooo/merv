@@ -193,7 +193,7 @@ function parseArgs(argv) {
     } else if (arg === '-h' || arg === '--help') {
       process.stdout.write(USAGE);
       process.exit(0);
-    } else if (arg.startsWith('-') && arg !== '-') {
+    } else if (arg.startsWith('-')) {
       console.error(`Unknown option: ${arg}`);
       process.exit(1);
     } else if (input !== undefined) {

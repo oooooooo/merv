@@ -20,8 +20,9 @@ for (const flag of ['-T', '--theme', '-o', '--output']) {
   assert.match(result.out, /requires a value/, `${flag} without a value should say so`);
 }
 
-// A mistyped flag used to be taken as the input filename.
-for (const flag of ['--thme', '-x']) {
+// A mistyped flag used to be taken as the input filename. "-" is in the list
+// because merv cannot read standard input: mermaid-cli is given a path.
+for (const flag of ['--thme', '-x', '-']) {
   const result = run(flag, 'value', sample);
   assert.equal(result.status, 1, `${flag} should exit 1`);
   assert.match(result.out, /Unknown option/, `${flag} should be reported as unknown`);
