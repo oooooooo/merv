@@ -5,6 +5,11 @@ Render a Markdown file containing Mermaid diagrams into a themed PDF, using
 rasterize the diagrams and [`@vivliostyle/cli`](https://github.com/vivliostyle/vivliostyle-cli)
 to typeset the result.
 
+[Marp](https://marp.app/) is a fine way to get a deck out of Markdown, but it
+wants a `---` at every slide boundary; `merv` lays the document out on its own.
+
+The name is `mer`maid + `v`ivliostyle.
+
 ## Usage
 
 ```sh
