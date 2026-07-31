@@ -43,7 +43,9 @@ function resolveBin(pkgName, binName) {
       return path.join(dir, pkgName, rel);
     }
   }
-  throw new Error(`Cannot find installed package "${pkgName}"`);
+  throw new Error(
+    `Cannot find installed package "${pkgName}". Run "npm install" in ${__dirname}.`
+  );
 }
 
 function runTool(pkgName, binName, args, verbose, cwd) {
