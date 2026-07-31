@@ -20,11 +20,7 @@ Options:
   -h, --help      Show this help
 
 Themes:
-  @vivliostyle/theme-techbook
-  @vivliostyle/theme-academic
-  @vivliostyle/theme-bunko
-  @vivliostyle/theme-slide
-  @vivliostyle/theme-gutenberg
+  https://docs.vivliostyle.org/en/themes/gallery/
 
 Markup:
   <!-- pagebreak -->   Start a new page here
