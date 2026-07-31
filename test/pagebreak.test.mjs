@@ -53,6 +53,17 @@ try {
   assert.equal(lines[4], '<!-- not a pagebreak -->', 'other comments should be left alone');
   assert.equal(lines[6], '<!-- pagebreak -->', 'fenced markers should be left alone');
 
+  // The rules travel in the document rather than on vivliostyle's --css, which
+  // holds a single value a config could otherwise replace.
+  const broken = fs.readFileSync(mdPath, 'utf8');
+  assert.match(broken, /<style>[\s\S]*merv-pagebreak[\s\S]*<\/style>\s*$/, 'the CSS should be appended');
+
+  // A document without a marker has nothing to style.
+  const plainPath = path.join(workdir, 'plain.md');
+  fs.writeFileSync(plainPath, '# plain\n');
+  prepareMarkdown(plainPath, tmp, workdir);
+  assert.equal(fs.readFileSync(plainPath, 'utf8'), '# plain\n', 'an unbroken document should be untouched');
+
   // Themes bring their own page rules, so the break has to hold under any of
   // them. theme-slide is the hard case: it lays each section out as a fixed
   // height flex box, which offers no break opportunity inside.

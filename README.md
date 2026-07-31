@@ -36,6 +36,14 @@ Themes:
 
 Markup:
   <!-- pagebreak -->   Start a new page here
+
+Config, named merv.json or .merv.json (first one found wins):
+  ./
+  <input's directory>/
+  $XDG_CONFIG_HOME/merv/
+  $HOME/
+
+  {"mermaid": ["-t", "dark"], "vivliostyle": ["--press-ready"]}
 ```
 
 `mermaid-cli` and `vivliostyle` output is streamed through as-is.
@@ -54,6 +62,34 @@ The start of the next.
 
 The marker is matched case-insensitively, works with any theme, and is
 ignored inside code blocks and code spans.
+
+## Configuration
+
+Options `merv` does not have of its own are reached through a `merv.json`,
+which passes arguments straight to the two tools underneath:
+
+```json
+{
+  "mermaid": ["-t", "dark", "-b", "transparent"],
+  "vivliostyle": ["--press-ready", "-s", "B5"]
+}
+```
+
+Both keys are optional. `merv` looks for the file in the current directory,
+then next to the input file, then in `$XDG_CONFIG_HOME/merv/` (falling back to
+`~/.config/merv/`), then in `$HOME`. Either name works in any of them —
+`merv.json`, or `.merv.json` to keep it out of a directory listing. **The first
+file found is the only one used** — the others are ignored rather than merged.
+A file that is not a JSON object, holds an unknown key, or holds anything but
+arrays of strings fails the run instead of being ignored.
+
+The arguments are appended after the ones `merv` passes itself, so where the
+underlying tool lets the last occurrence win, the config wins — including over
+`-T` given on the command line.
+
+Note that a `merv.json` decides the arguments of the browser-driving tools
+`merv` runs, so treat one that came with a cloned repository the way you would
+treat any other executable content in it.
 
 ## Requirements
 

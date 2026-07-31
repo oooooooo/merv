@@ -28,6 +28,14 @@ Themes:
 
 Markup:
   <!-- pagebreak -->   Start a new page here
+
+Config, named merv.json or .merv.json (first one found wins):
+  ./
+  <input's directory>/
+  $XDG_CONFIG_HOME/merv/
+  $HOME/
+
+  {"mermaid": ["-t", "dark"], "vivliostyle": ["--press-ready"]}
 `;
 
 function getVersion() {
@@ -98,7 +106,12 @@ export function prepareMarkdown(mdPath, srcDir, workdir) {
     return newRef;
   };
 
-  fs.writeFileSync(mdPath, transformMarkdown(fs.readFileSync(mdPath, 'utf8'), rewrite));
+  const md = transformMarkdown(fs.readFileSync(mdPath, 'utf8'), rewrite);
+  // The page break rules travel in the document rather than on vivliostyle's
+  // --css, which holds a single value a merv.json could otherwise replace.
+  // Appended, not prepended, so YAML frontmatter stays on the first line.
+  const style = md.includes(PAGE_BREAK_HTML) ? `\n<style>\n${PAGE_BREAK_CSS}\n</style>\n` : '';
+  fs.writeFileSync(mdPath, md + style);
 }
 
 // `![alt](dest)`, allowing one level of brackets in the alt text.
@@ -109,8 +122,8 @@ const FENCE = /^ {0,3}(`{3,}|~{3,})/;
 const CODE_SPAN = /(`+[^`]*`+)/;
 const PAGE_BREAK = /<!--\s*pagebreak\s*-->/gi;
 const PAGE_BREAK_HTML = '<div class="merv-pagebreak"></div>';
-// Passed to vivliostyle so the break outranks the theme's own page rules. The
-// :has() rule is for themes that lay a section out as a fixed height flex box
+// Written into the document so the break outranks the theme's own page rules.
+// The :has() rule is for themes that lay a section out as a fixed height flex box
 // (theme-slide does): a break inside one is never taken, so the container has to
 // be turned back into ordinary block flow first.
 const PAGE_BREAK_CSS = [
@@ -168,6 +181,44 @@ function transformMarkdown(md, rewrite) {
     .join('\n');
 }
 
+const CONFIG_NAMES = ['merv.json', '.merv.json'];
+const CONFIG_KEYS = ['mermaid', 'vivliostyle'];
+
+// Tokens to hand the child tools, from the nearest merv.json. The first file
+// found wins outright: merging four of them would make the arguments a build
+// actually ran with impossible to read off any single file.
+export function loadConfig(cwd, srcDir) {
+  const xdg = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
+  const candidates = [cwd, srcDir, path.join(xdg, 'merv'), os.homedir()].flatMap((dir) =>
+    CONFIG_NAMES.map((name) => path.join(dir, name))
+  );
+
+  const found = candidates.find((candidate) => fs.existsSync(candidate));
+  if (!found) return Object.fromEntries(CONFIG_KEYS.map((key) => [key, []]));
+
+  // A config that cannot be honoured has to be reported: quietly ignoring it
+  // would produce a PDF that disagrees with the file on disk.
+  const reject = (reason) => {
+    throw new Error(`${found}: ${reason}`);
+  };
+  let parsed;
+  try {
+    parsed = JSON.parse(fs.readFileSync(found, 'utf8'));
+  } catch (err) {
+    reject(err.message);
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    reject('must hold a JSON object');
+  }
+  for (const key of Object.keys(parsed)) {
+    if (!CONFIG_KEYS.includes(key)) reject(`unknown key "${key}" (expected ${CONFIG_KEYS.join(' or ')})`);
+    if (!Array.isArray(parsed[key]) || parsed[key].some((token) => typeof token !== 'string')) {
+      reject(`"${key}" must be an array of strings`);
+    }
+  }
+  return Object.fromEntries(CONFIG_KEYS.map((key) => [key, parsed[key] ?? []]));
+}
+
 function parseArgs(argv) {
   let theme = '@vivliostyle/theme-techbook';
   let output;
@@ -214,6 +265,15 @@ function parseArgs(argv) {
 
 function main() {
   const { theme, output, input } = parseArgs(process.argv.slice(2));
+  const srcDir = path.dirname(path.resolve(input));
+
+  let config;
+  try {
+    config = loadConfig(process.cwd(), srcDir);
+  } catch (err) {
+    console.error(err.message);
+    process.exit(1);
+  }
 
   const cacheRoot = path.join(
     process.env.XDG_CACHE_HOME || path.join(os.homedir(), '.cache'),
@@ -242,14 +302,24 @@ function main() {
   const pdf = output ? path.resolve(output) : path.resolve(base + '.pdf');
   const outMd = path.join(workdir, 'out.md');
 
-  runTool('@mermaid-js/mermaid-cli', 'mmdc', ['-i', input, '-o', outMd, '-a', workdir]);
-  prepareMarkdown(outMd, path.dirname(path.resolve(input)), workdir);
+  // Config tokens go last so they can override the arguments merv chose for the
+  // options where the child tool lets the last occurrence win.
+  runTool('@mermaid-js/mermaid-cli', 'mmdc', [
+    '-i',
+    input,
+    '-o',
+    outMd,
+    '-a',
+    workdir,
+    ...config.mermaid,
+  ]);
+  prepareMarkdown(outMd, srcDir, workdir);
   // Run from workdir: vivliostyle auto-loads vivliostyle.config.* from its cwd,
   // and such a config would override the entry/output we pass on the command line.
   runTool(
     '@vivliostyle/cli',
     'vivliostyle',
-    ['build', outMd, '-s', 'A4', '-T', theme, '-o', pdf, '--css', PAGE_BREAK_CSS],
+    ['build', outMd, '-s', 'A4', '-T', theme, '-o', pdf, ...config.vivliostyle],
     workdir
   );
 
