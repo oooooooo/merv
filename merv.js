@@ -117,12 +117,18 @@ function parseArgs(argv) {
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
+    const value = () => {
+      const next = argv[++i];
+      if (next === undefined) {
+        console.error(`Option "${arg}" requires a value`);
+        process.exit(1);
+      }
+      return next;
+    };
     if (arg === '-T' || arg === '--theme') {
-      i++;
-      theme = argv[i];
+      theme = value();
     } else if (arg === '-o' || arg === '--output') {
-      i++;
-      output = argv[i];
+      output = value();
     } else if (arg === '--verbose') {
       verbose = true;
     } else if (arg === '-v' || arg === '--version') {
@@ -131,6 +137,9 @@ function parseArgs(argv) {
     } else if (arg === '-h' || arg === '--help') {
       process.stdout.write(USAGE);
       process.exit(0);
+    } else if (arg.startsWith('-') && arg !== '-') {
+      console.error(`Unknown option: ${arg}`);
+      process.exit(1);
     } else if (input !== undefined) {
       console.error(`Unexpected argument: ${arg}`);
       process.exit(1);
