@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const USAGE = `Usage: merv [-T theme] [-o output.pdf] [--verbose] input.md
+const USAGE = `Usage: merv [-T theme] [-o output.pdf] input.md
        merv -v | --version
        merv -h | --help
 
@@ -17,7 +17,6 @@ Options:
   -T, --theme     Vivliostyle theme (default: @vivliostyle/theme-techbook)
   -o, --output    Output PDF path (default: <input>.pdf)
   -v, --version   Show version
-      --verbose   Show full output from mermaid-cli/vivliostyle
   -h, --help      Show this help
 
 Themes:
@@ -52,21 +51,14 @@ function resolveBin(pkgName, binName) {
   );
 }
 
-function runTool(pkgName, binName, args, verbose, cwd) {
+function runTool(pkgName, binName, args, cwd) {
   const binPath = resolveBin(pkgName, binName);
-  const stdio = verbose ? 'inherit' : ['ignore', 'pipe', 'pipe'];
-  const result = spawnSync(process.execPath, [binPath, ...args], { stdio, cwd });
+  const result = spawnSync(process.execPath, [binPath, ...args], { stdio: 'inherit', cwd });
   if (result.error) {
     console.error(`Failed to launch ${binName}: ${result.error.message}`);
     process.exit(1);
   }
-  if (result.status !== 0) {
-    if (!verbose) {
-      if (result.stdout?.length) process.stderr.write(result.stdout);
-      if (result.stderr?.length) process.stderr.write(result.stderr);
-    }
-    process.exit(result.status ?? 1);
-  }
+  if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
 function resolveAsset(ref, srcDir, workdir) {
@@ -179,7 +171,6 @@ function transformMarkdown(md, rewrite) {
 function parseArgs(argv) {
   let theme = '@vivliostyle/theme-techbook';
   let output;
-  let verbose = false;
   let input;
 
   for (let i = 0; i < argv.length; i++) {
@@ -196,8 +187,6 @@ function parseArgs(argv) {
       theme = value();
     } else if (arg === '-o' || arg === '--output') {
       output = value();
-    } else if (arg === '--verbose') {
-      verbose = true;
     } else if (arg === '-v' || arg === '--version') {
       console.log(getVersion());
       process.exit(0);
@@ -220,11 +209,11 @@ function parseArgs(argv) {
     process.exit(1);
   }
 
-  return { theme, output, verbose, input };
+  return { theme, output, input };
 }
 
 function main() {
-  const { theme, output, verbose, input } = parseArgs(process.argv.slice(2));
+  const { theme, output, input } = parseArgs(process.argv.slice(2));
 
   const cacheRoot = path.join(
     process.env.XDG_CACHE_HOME || path.join(os.homedir(), '.cache'),
@@ -253,7 +242,7 @@ function main() {
   const pdf = output ? path.resolve(output) : path.resolve(base + '.pdf');
   const outMd = path.join(workdir, 'out.md');
 
-  runTool('@mermaid-js/mermaid-cli', 'mmdc', ['-i', input, '-o', outMd, '-a', workdir], verbose);
+  runTool('@mermaid-js/mermaid-cli', 'mmdc', ['-i', input, '-o', outMd, '-a', workdir]);
   prepareMarkdown(outMd, path.dirname(path.resolve(input)), workdir);
   // Run from workdir: vivliostyle auto-loads vivliostyle.config.* from its cwd,
   // and such a config would override the entry/output we pass on the command line.
@@ -261,7 +250,6 @@ function main() {
     '@vivliostyle/cli',
     'vivliostyle',
     ['build', outMd, '-s', 'A4', '-T', theme, '-o', pdf, '--css', PAGE_BREAK_CSS],
-    verbose,
     workdir
   );
 

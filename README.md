@@ -17,7 +17,7 @@ on demand. Output is written next to the input as `input.pdf`.
 ### Options
 
 ```text
-Usage: merv [-T theme] [-o output.pdf] [--verbose] input.md
+Usage: merv [-T theme] [-o output.pdf] input.md
        merv -v | --version
        merv -h | --help
 
@@ -25,7 +25,6 @@ Options:
   -T, --theme     Vivliostyle theme (default: @vivliostyle/theme-techbook)
   -o, --output    Output PDF path (default: <input>.pdf)
   -v, --version   Show version
-      --verbose   Show full output from mermaid-cli/vivliostyle
   -h, --help      Show this help
 
 Themes:
@@ -39,9 +38,7 @@ Markup:
   <!-- pagebreak -->   Start a new page here
 ```
 
-By default, `merv` only prints something if `mermaid-cli` or `vivliostyle`
-fail (in which case their output is shown to help diagnose the error). Pass
-`--verbose` to always stream their normal output.
+`mermaid-cli` and `vivliostyle` output is streamed through as-is.
 
 ### Page breaks
 
