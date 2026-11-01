@@ -442,17 +442,28 @@ export function optionValues(tokens) {
   const values = [];
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i];
+    // Past "--" nothing is an option.
+    if (token === '--') break;
     const joined = token.match(/^(--[\w-]+)=/);
     if (joined) {
       if (VALUE_OPTIONS.has(joined[1])) values.push({ option: joined[1], index: i, prefix: joined[0] });
       continue;
     }
-    const short = token.match(/^-[A-Za-z]/)?.[0];
-    if (short && token.length > 2 && SHORT_OPTIONS[short]) {
-      values.push({ option: SHORT_OPTIONS[short], index: i, prefix: short });
-      continue;
+    // Short flags can be run together, as commander reads them: "-mo out"
+    // is -m and then -o taking the next token, "-mlja" is -m and then -l
+    // taking "ja". The first letter that takes a value takes the rest.
+    let option = token;
+    if (/^-[A-Za-z]{2,}/.test(token)) {
+      const at = [...token.slice(1)].findIndex((c) => SHORT_OPTIONS[`-${c}`]);
+      if (at < 0) continue;
+      option = SHORT_OPTIONS[`-${token[at + 1]}`];
+      const prefix = token.slice(0, at + 2);
+      if (token.length > prefix.length) {
+        values.push({ option, index: i, prefix });
+        continue;
+      }
     }
-    const option = SHORT_OPTIONS[token] ?? token;
+    option = SHORT_OPTIONS[option] ?? option;
     if (!VALUE_OPTIONS.has(option) || i + 1 >= tokens.length) continue;
     values.push({ option, index: ++i, prefix: '' });
     if (MULTI_VALUE_OPTIONS.has(option)) {

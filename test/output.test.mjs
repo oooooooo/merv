@@ -59,6 +59,11 @@ try {
   // vivliostyle hands an option the token after it even when that token looks
   // like an option, so these are a title and a theme, not outputs.
   assert.deepEqual(configOutputs(['--title', '--output=.', '-T', 'a', 'b', '--author', '-o'], tmp), []);
+  // Short flags run together are split as commander splits them, so an -o
+  // after them cannot hide behind a value they did not take.
+  assert.deepEqual(configOutputs(['-ml', '--title', '-o', 'p'], tmp), [at('p')], '-ml takes --title as -l');
+  assert.deepEqual(configOutputs(['-mo', 'q', '-mlja', '-mpox.pdf'], tmp), [at('q'), at('x.pdf')]);
+  assert.deepEqual(configOutputs(['--', '-o', 'r'], tmp), [], 'nothing after -- is an option');
 
   // An extensionless -o is a webpub directory vivliostyle deletes before
   // writing, so one holding the project, the input or the cwd is refused; so is
