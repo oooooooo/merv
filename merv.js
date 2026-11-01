@@ -9,16 +9,20 @@ import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const USAGE = `Usage: merv [-T theme] [-o output.pdf] [--keep-work-dir] input.md
+const USAGE = `Usage: merv [options] [--] input.md
        merv -v | --version
        merv -h | --help
 
 Options:
   -T, --theme       Vivliostyle theme (default: @vivliostyle/theme-techbook)
   -o, --output      Output PDF path (default: <input>.pdf)
+  --config <file>   Use this config instead of searching for one
+  --no-config       Use no config
   --keep-work-dir   Keep the intermediate files and print where they are
+  --verbose         Print the config used, and each tool's arguments and cwd
   -v, --version     Show version
   -h, --help        Show this help
+  --                Take what follows as the input, even if it starts with -
 
 Themes:
   https://docs.vivliostyle.org/en/themes/gallery/
@@ -26,7 +30,7 @@ Themes:
 Markup:
   <!-- pagebreak -->   Start a new page here
 
-Config, named merv.json or .merv.json (first one found wins):
+Config, named merv.json or .merv.json (first one found wins, unless --config):
   ./
   <input's directory>/
   $XDG_CONFIG_HOME/merv/
@@ -56,14 +60,27 @@ function resolveBin(pkgName, binName) {
   );
 }
 
-function runTool(pkgName, binName, args, cwd) {
+let verbose = false;
+
+function runTool(pkgName, binName, args, cwd = process.cwd()) {
   const binPath = resolveBin(pkgName, binName);
+  // An array, not a shell line: a value with a space in it reads unambiguously.
+  if (verbose) console.error(`merv: running ${binName} in ${cwd}: ${JSON.stringify(args)}`);
   const result = spawnSync(process.execPath, [binPath, ...args], { stdio: 'inherit', cwd });
   if (result.error) {
-    console.error(`Failed to launch ${binName}: ${result.error.message}`);
+    console.error(`merv: failed to launch ${binName}: ${result.error.message}`);
     process.exit(1);
   }
-  if (result.status !== 0) process.exit(result.status ?? 1);
+  // The tool's own output streams past above, often at length; this line says
+  // which of the two it came from and that it is the reason merv stopped.
+  if (result.signal) {
+    console.error(`merv: ${binName} was killed by ${result.signal}`);
+    process.exit(1);
+  }
+  if (result.status !== 0) {
+    console.error(`merv: ${binName} failed (exit ${result.status})`);
+    process.exit(result.status);
+  }
 }
 
 // Where a reference in the intermediate markdown points: 'workdir' when it
@@ -96,7 +113,17 @@ export function prepareMarkdown(mdPath, srcDir, workdir) {
   const rewrite = (ref) => {
     if (/^[a-z][a-z0-9+.-]*:/i.test(ref) || ref.startsWith('//') || ref.startsWith('#')) return ref;
     if (copies.has(ref)) return copies.get(ref);
-    const abs = resolveAsset(ref, srcDir, workdir);
+    // "icon.svg#symbol" and "img.png?v=2" name the file before the suffix, and
+    // the suffix still means something to the browser, so it rides along onto
+    // the copy. The whole reference is tried first, for a file that really has
+    // a "#" or "?" in its name.
+    let abs = resolveAsset(ref, srcDir, workdir);
+    let suffix = '';
+    const split = ref.match(/^([^?#]+)([?#][\s\S]*)$/);
+    if (abs === null && split) {
+      abs = resolveAsset(split[1], srcDir, workdir);
+      suffix = split[2];
+    }
     if (abs === null) missing.add(ref);
     if (abs === null || abs === 'workdir') return ref;
     // Flatten and sanitize: the copy has to sit under the workdir with a name
@@ -104,7 +131,7 @@ export function prepareMarkdown(mdPath, srcDir, workdir) {
     const name = `${copies.size}-${path.basename(abs).replace(/[^\w.-]/g, '_')}`;
     fs.mkdirSync(assetsDir, { recursive: true });
     fs.copyFileSync(abs, path.join(assetsDir, name));
-    const newRef = `_assets/${name}`;
+    const newRef = `_assets/${name}${suffix}`;
     copies.set(ref, newRef);
     return newRef;
   };
@@ -121,8 +148,9 @@ export function prepareMarkdown(mdPath, srcDir, workdir) {
   return { missing: [...missing] };
 }
 
-// `![alt](dest)`, allowing one level of brackets in the alt text.
-const INLINE_IMAGE = /(!\[(?:[^[\]]|\[[^\]]*\])*\]\(\s*)(<[^>]*>|[^()\s]*)/g;
+// `![alt](dest)`, allowing one level of brackets in the alt text and one level
+// of balanced parentheses in the destination, as in "chart(v2).png".
+const INLINE_IMAGE = /(!\[(?:[^[\]]|\[[^\]]*\])*\]\(\s*)(<[^>]*>|(?:[^()\s]|\([^()\s]*\))*)/g;
 const REFERENCE_DEFINITION = /^(\s{0,3}\[[^\]]+\]:\s*)(<[^>]*>|\S+)/;
 const HTML_SRC = /(<img\b[^>]*?\bsrc\s*=\s*)("[^"]*"|'[^']*'|[^\s>]+)/gi;
 const PAGE_BREAK = /<!--\s*pagebreak\s*-->/gi;
@@ -228,16 +256,28 @@ function verbatimRanges(md) {
 const CONFIG_NAMES = ['merv.json', '.merv.json'];
 const CONFIG_KEYS = ['mermaid', 'vivliostyle'];
 
-// Tokens to hand the child tools, from the nearest merv.json. The first file
-// found wins outright: merging four of them would make the arguments a build
-// actually ran with impossible to read off any single file.
-export function loadConfig(cwd, srcDir) {
+// The config file a build uses, or null for none. The first file found wins
+// outright: merging four of them would make the arguments a build actually ran
+// with impossible to read off any single file. --config names the file instead
+// of searching, and --no-config skips the search.
+export function locateConfig(cwd, srcDir, { file, none = false } = {}) {
+  if (none) return null;
+  if (file !== undefined) {
+    const abs = path.resolve(cwd, file);
+    // Falling back to the search would build with a config the user did not ask for.
+    if (!fs.existsSync(abs)) throw new Error(`${abs}: config file not found`);
+    return abs;
+  }
   const xdg = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
   const candidates = [cwd, srcDir, path.join(xdg, 'merv'), os.homedir()].flatMap((dir) =>
     CONFIG_NAMES.map((name) => path.join(dir, name))
   );
+  return candidates.find((candidate) => fs.existsSync(candidate)) ?? null;
+}
 
-  const found = candidates.find((candidate) => fs.existsSync(candidate));
+// Tokens to hand the child tools, from the config locateConfig picks.
+export function loadConfig(cwd, srcDir, options) {
+  const found = locateConfig(cwd, srcDir, options);
   if (!found) return Object.fromEntries(CONFIG_KEYS.map((key) => [key, []]));
 
   // A config that cannot be honoured has to be reported: quietly ignoring it
@@ -263,28 +303,65 @@ export function loadConfig(cwd, srcDir) {
   return Object.fromEntries(CONFIG_KEYS.map((key) => [key, parsed[key] ?? []]));
 }
 
+// merv's own options, so that one can be told apart from a value.
+const OPTIONS = new Set([
+  '-T',
+  '--theme',
+  '-o',
+  '--output',
+  '--config',
+  '--no-config',
+  '--keep-work-dir',
+  '--verbose',
+  '-v',
+  '--version',
+  '-h',
+  '--help',
+  '--',
+]);
+
 function parseArgs(argv) {
   let theme = '@vivliostyle/theme-techbook';
   let output;
   let input;
+  let configFile;
+  let noConfig = false;
   let keepWorkDir = false;
+  let verbose = false;
+  let positionalOnly = false;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
+    // "-T -o out.pdf" is a forgotten theme, not a theme named "-o": taking it
+    // as one would also lose the output path the user did give.
     const value = () => {
       const next = argv[++i];
-      if (next === undefined) {
+      if (next === undefined || next === '' || OPTIONS.has(next)) {
         console.error(`Option "${arg}" requires a value`);
         process.exit(1);
       }
       return next;
     };
-    if (arg === '-T' || arg === '--theme') {
+    if (positionalOnly) {
+      if (input !== undefined) {
+        console.error(`Unexpected argument: ${arg}`);
+        process.exit(1);
+      }
+      input = arg;
+    } else if (arg === '--') {
+      positionalOnly = true;
+    } else if (arg === '-T' || arg === '--theme') {
       theme = value();
     } else if (arg === '-o' || arg === '--output') {
       output = value();
+    } else if (arg === '--config') {
+      configFile = value();
+    } else if (arg === '--no-config') {
+      noConfig = true;
     } else if (arg === '--keep-work-dir') {
       keepWorkDir = true;
+    } else if (arg === '--verbose') {
+      verbose = true;
     } else if (arg === '-v' || arg === '--version') {
       console.log(getVersion());
       process.exit(0);
@@ -306,8 +383,12 @@ function parseArgs(argv) {
     process.stderr.write(USAGE);
     process.exit(1);
   }
+  if (configFile !== undefined && noConfig) {
+    console.error('Options "--config" and "--no-config" cannot be used together');
+    process.exit(1);
+  }
 
-  return { theme, output, input, keepWorkDir };
+  return { theme, output, input, configFile, noConfig, keepWorkDir, verbose };
 }
 
 // The vivliostyle build options whose value names a file. -T takes several.
@@ -363,6 +444,23 @@ export function resolvePathArgs(tokens, baseDir, workdir) {
   });
 }
 
+// Take vivliostyle's -o out of config tokens and return the last one's value.
+// merv has vivliostyle write into the workdir and moves the PDF out itself, so a
+// config's -o would otherwise point vivliostyle somewhere merv never looks. It
+// stays the last word on where the PDF goes, as the config is everywhere else.
+export function takeOutput(tokens) {
+  const rest = [];
+  let output;
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    const joined = token.match(/^--output=([\s\S]*)$/);
+    if (joined) output = joined[1];
+    else if ((token === '-o' || token === '--output') && i + 1 < tokens.length) output = tokens[++i];
+    else rest.push(token);
+  }
+  return { tokens: rest, output };
+}
+
 // Move the PDF vivliostyle wrote in the workdir to where it was asked for. Up to
 // here a failed build has left any earlier PDF at that path alone, and this
 // keeps it that way: the copy lands next to the target and is renamed over it,
@@ -393,16 +491,22 @@ export function commitPdf(built, target) {
 }
 
 function main() {
-  const { theme, output, input, keepWorkDir } = parseArgs(process.argv.slice(2));
+  const args = parseArgs(process.argv.slice(2));
+  const { theme, input, keepWorkDir } = args;
+  verbose = args.verbose;
   const srcDir = path.dirname(path.resolve(input));
 
   let config;
   try {
-    config = loadConfig(process.cwd(), srcDir);
+    const options = { file: args.configFile, none: args.noConfig };
+    if (verbose) console.error(`merv: config: ${locateConfig(process.cwd(), srcDir, options) ?? 'none'}`);
+    config = loadConfig(process.cwd(), srcDir, options);
   } catch (err) {
     console.error(err.message);
     process.exit(1);
   }
+  const vivliostyle = takeOutput(config.vivliostyle);
+  const output = vivliostyle.output ?? args.output;
 
   const cacheRoot = path.join(
     process.env.XDG_CACHE_HOME || path.join(os.homedir(), '.cache'),
@@ -431,7 +535,11 @@ function main() {
   }
 
   const base = input.endsWith('.md') ? input.slice(0, -3) : input;
-  const pdf = output ? path.resolve(output) : path.resolve(base + '.pdf');
+  let pdf = output ? path.resolve(output) : path.resolve(base + '.pdf');
+  // vivliostyle's -o also takes a directory, and a config may well use it so.
+  if (output && (/[\\/]$/.test(output) || fs.statSync(pdf, { throwIfNoEntry: false })?.isDirectory())) {
+    pdf = path.join(pdf, path.basename(base) + '.pdf');
+  }
   const outMd = path.join(workdir, 'out.md');
   const builtPdf = path.join(workdir, 'out.pdf');
 
@@ -439,7 +547,9 @@ function main() {
   // options where the child tool lets the last occurrence win.
   runTool('@mermaid-js/mermaid-cli', 'mmdc', [
     '-i',
-    input,
+    // Absolute, so an input named "-x.md" (reachable after --) is not taken
+    // for an option.
+    path.resolve(input),
     '-o',
     outMd,
     '-a',
@@ -465,7 +575,7 @@ function main() {
       'A4',
       '-o',
       builtPdf,
-      ...resolvePathArgs(['-T', theme, ...config.vivliostyle], process.cwd(), workdir),
+      ...resolvePathArgs(['-T', theme, ...vivliostyle.tokens], process.cwd(), workdir),
     ],
     workdir
   );
@@ -492,4 +602,13 @@ function main() {
 // Importing this file (the tests do) must not start a build. The bin entry is a
 // symlink, so compare against what it resolves to.
 const entry = process.argv[1] && fs.existsSync(process.argv[1]) ? fs.realpathSync(process.argv[1]) : '';
-if (entry === __filename) main();
+if (entry === __filename) {
+  // An exception that escapes -- a missing dependency, an unwritable cache --
+  // is reported as a message, not a stack trace.
+  try {
+    main();
+  } catch (err) {
+    console.error(`merv: ${err.message}`);
+    process.exit(1);
+  }
+}

@@ -31,16 +31,20 @@ that.
 ### Options
 
 ```text
-Usage: merv [-T theme] [-o output.pdf] [--keep-work-dir] input.md
+Usage: merv [options] [--] input.md
        merv -v | --version
        merv -h | --help
 
 Options:
   -T, --theme       Vivliostyle theme (default: @vivliostyle/theme-techbook)
   -o, --output      Output PDF path (default: <input>.pdf)
+  --config <file>   Use this config instead of searching for one
+  --no-config       Use no config
   --keep-work-dir   Keep the intermediate files and print where they are
+  --verbose         Print the config used, and each tool's arguments and cwd
   -v, --version     Show version
   -h, --help        Show this help
+  --                Take what follows as the input, even if it starts with -
 
 Themes:
   https://docs.vivliostyle.org/en/themes/gallery/
@@ -48,7 +52,7 @@ Themes:
 Markup:
   <!-- pagebreak -->   Start a new page here
 
-Config, named merv.json or .merv.json (first one found wins):
+Config, named merv.json or .merv.json (first one found wins, unless --config):
   ./
   <input's directory>/
   $XDG_CONFIG_HOME/merv/
@@ -121,8 +125,12 @@ Both keys are optional. Filenames and search order:
 4. `$HOME`
 
 - **First match wins** — later files are ignored, not merged.
+- `--config <file>` uses that file and searches no further; `--no-config`
+  uses none. A `--config` file that does not exist is an error, not a reason
+  to fall back to the search.
 - Config args are appended after `merv`'s own, so where the last occurrence
-  wins, the config wins — including over `-T` on the command line.
+  wins, the config wins — including over `-T` and `-o` on the command line.
+  A `-o` in `vivliostyle` names where the PDF goes, file or directory.
 - Relative paths in a config are resolved against the current directory, not
   the directory the config sits in — the same rule `mermaid-cli` follows for
   its arguments and `vivliostyle` for its own `vivliostyle.config.js`. A

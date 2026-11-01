@@ -18,6 +18,8 @@ const workdir = path.join(tmp, 'work');
 fs.mkdirSync(path.join(srcDir, 'sub'), { recursive: true });
 fs.mkdirSync(workdir);
 fs.writeFileSync(path.join(srcDir, 'img.png'), 'png');
+fs.writeFileSync(path.join(srcDir, 'chart(v2).png'), 'png');
+fs.writeFileSync(path.join(srcDir, 'icon.svg'), 'svg');
 fs.writeFileSync(path.join(srcDir, 'sub', '日本語 名前.png'), 'png');
 // What mermaid-cli leaves next to the markdown it rewrote.
 fs.writeFileSync(path.join(workdir, 'out-1.svg'), 'svg');
@@ -39,6 +41,12 @@ html double: <img src="./img.png" width="100">
 html single: <img src='./img.png'>
 
 html bare: <img src=./img.png>
+
+parentheses: ![p](./chart(v2).png)
+
+fragment: ![f](./icon.svg#symbol)
+
+query: ![q](./img.png?v=2)
 
 reference: ![r][ref]
 
@@ -97,6 +105,12 @@ try {
     'reference definitions should point at a copied asset'
   );
 
+  for (const label of ['parentheses:', 'fragment:', 'query:']) {
+    assert.match(line(label), /_assets\//, `${label} should point at a copied asset`);
+  }
+  assert.match(line('parentheses:'), /\]\(_assets\/[\w.-]+\)$/, 'the whole parenthesised path should be replaced');
+  assert.match(line('fragment:'), /\.svg#symbol\)$/, 'the fragment should ride along onto the copy');
+  assert.match(line('query:'), /\.png\?v=2\)$/, 'the query should ride along onto the copy');
   assert.match(line('title:'), /"a title"/, 'the title should survive the rewrite');
   assert.equal(line('mermaid output:'), 'mermaid output: ![diagram](out-1.svg)');
   assert.equal(line('remote:'), 'remote: ![u](https://example.com/x.png)');
@@ -114,7 +128,8 @@ try {
   for (const name of copied) {
     assert.match(name, /^[\w.-]+$/, `copied name ${name} should need no URL escaping`);
   }
-  for (const ref of md.match(/_assets\/[^)>"'\s]+/g) ?? []) {
+  // A fragment or query rides along on the reference but is not in the name.
+  for (const ref of md.match(/_assets\/[^)>"'\s?#]+/g) ?? []) {
     assert.ok(fs.existsSync(path.join(workdir, ref)), `${ref} should exist`);
   }
 

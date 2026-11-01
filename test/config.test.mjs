@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { loadConfig } from '../merv.js';
+import { loadConfig, locateConfig } from '../merv.js';
 import { pageWidth } from './pdf.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -55,6 +55,26 @@ try {
   write('cwd', { mermaid: ['-t', 'dark'], vivliostyle: ['--press-ready'] });
   assert.deepEqual(load(), { mermaid: ['-t', 'dark'], vivliostyle: ['--press-ready'] });
 
+  // --config replaces the search outright, and --no-config skips it.
+  const chosen = path.join(tmp, 'chosen.json');
+  fs.writeFileSync(chosen, JSON.stringify({ mermaid: ['chosen'] }));
+  assert.deepEqual(
+    loadConfig(path.join(tmp, dirs.cwd), path.join(tmp, dirs.src), { file: chosen }).mermaid,
+    ['chosen'],
+    '--config should win over every searched location'
+  );
+  assert.equal(locateConfig(path.join(tmp, dirs.cwd), path.join(tmp, dirs.src), { none: true }), null);
+  assert.deepEqual(loadConfig(path.join(tmp, dirs.cwd), path.join(tmp, dirs.src), { none: true }), {
+    mermaid: [],
+    vivliostyle: [],
+  });
+  // A named file that is not there must not fall back to the search, which
+  // would build with a config the user did not ask for.
+  assert.throws(
+    () => loadConfig(path.join(tmp, dirs.cwd), path.join(tmp, dirs.src), { file: 'nope.json' }),
+    /config file not found/
+  );
+
   // A config that cannot be honoured has to say so: silently ignoring it would
   // produce a PDF that quietly disagrees with the file on disk.
   for (const [label, contents] of [
@@ -92,9 +112,14 @@ try {
     });
 
   // merv asks for A4, so a page narrower than that is the config's -s winning.
-  write('cwd', { vivliostyle: ['-s', 'B5'] });
+  // The config's -o wins over the command line's the same way, and is
+  // resolved against the cwd like the rest.
+  write('cwd', { vivliostyle: ['-s', 'B5', '-o', 'from-config.pdf'] });
   assert.equal(build().status, 0, 'a config build should exit 0');
-  const width = pageWidth(pdf);
+  const fromConfig = path.join(tmp, dirs.cwd, 'from-config.pdf');
+  assert.ok(fs.existsSync(fromConfig), "the config's -o should name where the PDF goes");
+  assert.ok(!fs.existsSync(pdf), "the command line's -o should lose to the config's");
+  const width = pageWidth(fromConfig);
   assert.ok(width < 560, `the vivliostyle tokens should reach vivliostyle (page is ${width}pt wide)`);
 
   // mermaid-cli has no comparable effect to measure, so prove arrival by an

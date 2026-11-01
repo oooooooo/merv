@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { commitPdf } from '../merv.js';
+import { commitPdf, takeOutput } from '../merv.js';
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'merv-output-'));
 const at = (name) => path.join(tmp, name);
@@ -41,6 +41,14 @@ try {
   const nested = at('a/b/doc.pdf');
   commitPdf(at('built.pdf'), nested);
   assert.equal(fs.readFileSync(nested, 'utf8'), pdf, 'missing parent directories should be created');
+
+  // A config's -o is lifted out of vivliostyle's tokens, the last one winning
+  // as it would have in vivliostyle, and the other tokens pass through.
+  assert.deepEqual(takeOutput(['-s', 'B5', '-o', 'a.pdf', '--output=b.pdf', '-p']), {
+    tokens: ['-s', 'B5', '-p'],
+    output: 'b.pdf',
+  });
+  assert.deepEqual(takeOutput(['-s', 'B5']), { tokens: ['-s', 'B5'], output: undefined });
 
   console.log('output test passed');
 } finally {
