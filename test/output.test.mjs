@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { checkConfigOutputs, commitPdf, configOutputs, outputPath } from '../merv.js';
+import { checkConfigOutputs, commitPdf, outputPath, vivliostyleOutputs } from '../merv.js';
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'merv-output-'));
 const at = (name) => path.join(tmp, name);
@@ -50,26 +50,26 @@ try {
   assert.equal(outputPath('dir/doc.md', at('named.pdf')), at('named.pdf'));
   assert.equal(outputPath(at('doc.md')), at('doc.pdf'));
 
-  // A config's -o tokens, in each of their spellings, resolved against the cwd.
-  assert.deepEqual(configOutputs(['-o', 'a.pdf', '-f', 'pdf', '--output=web', '-ob.pdf', '-s', 'B5'], tmp), [
+  // The outputs vivliostyle will write, read by commander as vivliostyle reads
+  // them, in every spelling and wherever its parse puts them.
+  const outputs = (args) => vivliostyleOutputs(['in.md', ...args], tmp);
+  assert.deepEqual(outputs(['-o', 'a.pdf', '-f', 'pdf', '--output=web', '-ob.pdf', '-s', 'B5']), [
     at('a.pdf'),
     at('web'),
     at('b.pdf'),
   ]);
-  // vivliostyle hands an option the token after it even when that token looks
-  // like an option, so these are a title and a theme, not outputs.
-  assert.deepEqual(configOutputs(['--title', '--output=.', '-T', 'a', 'b', '--author', '-o'], tmp), []);
-  // Short flags run together are split as commander splits them, so an -o
-  // after them cannot hide behind a value they did not take.
-  assert.deepEqual(configOutputs(['-ml', '--title', '-o', 'p'], tmp), [at('p')], '-ml takes --title as -l');
-  assert.deepEqual(configOutputs(['-mo', 'q', '-mlja', '-mpox.pdf'], tmp), [at('q'), at('x.pdf')]);
-  assert.deepEqual(configOutputs(['--', '-o', 'r'], tmp), [], 'nothing after -- is an option');
-  // A value joined to its flag can start with anything, a path included.
-  assert.deepEqual(configOutputs(['-o/abs/project', '-o./extra.pdf', '-mo/x'], tmp), [
-    '/abs/project',
-    at('extra.pdf'),
-    '/x',
-  ]);
+  // An option takes the token after it even when that token looks like one.
+  assert.deepEqual(outputs(['--title', '--output=.', '-T', 'a', 'b', '--author', '-o']), []);
+  // Short flags run together, and the corners of commander's reading of them.
+  assert.deepEqual(outputs(['-ml', '--title', '-o', 'p']), [at('p')], '-ml takes --title as -l');
+  assert.deepEqual(outputs(['-mo', 'q', '-mlja', '-mpox.pdf']), [at('q'), at('x.pdf')]);
+  assert.deepEqual(outputs(['-o/abs/project', '-o./extra.pdf', '-mo/x']), ['/abs/project', at('extra.pdf'), '/x']);
+  assert.deepEqual(outputs(['-mm-output=/abs/project']), ['/abs/project'], 'a long option out of a cluster');
+  // After "--" these are inputs, more than vivliostyle takes, so it would stop;
+  // merv stops first.
+  assert.throws(() => outputs(['--', '-o', 'r']), /too many arguments/);
+  // What it cannot read is refused, not passed on unchecked.
+  assert.throws(() => outputs(['--no-such-option', '-o', '.']), /could not read the vivliostyle arguments/);
 
   // An extensionless -o is a webpub directory vivliostyle deletes before
   // writing, so one holding the project, the input or the cwd is refused; so is

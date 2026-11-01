@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { VALUE_OPTIONS } from '../merv.js';
+import { FLAG_OPTIONS, VALUE_OPTIONS } from '../merv.js';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (file) => JSON.parse(fs.readFileSync(path.join(root, file), 'utf8'));
@@ -34,5 +34,9 @@ const help = spawnSync(
 const listed = [...help.matchAll(/^\s+(?:-\w, )?(--[\w-]+) <[^>]+>/gm)].map((m) => m[1]).sort();
 assert.ok(listed.length > 0, 'could not read the options from vivliostyle build --help');
 assert.deepEqual([...VALUE_OPTIONS].sort(), listed, 'VALUE_OPTIONS in merv.js is out of step with vivliostyle');
+const flags = [...help.matchAll(/^\s+(?:-\w, )?(--[\w-]+)(?=\s{2,}|$)/gm)].map((m) => m[1]);
+// --help is the one option merv leaves to commander; --sandbox is one vivliostyle hides.
+const listedFlags = [...flags.filter((f) => f !== '--help'), '--sandbox'].sort();
+assert.deepEqual([...FLAG_OPTIONS].sort(), listedFlags, 'FLAG_OPTIONS in merv.js is out of step with vivliostyle');
 
 console.log('deps test passed');

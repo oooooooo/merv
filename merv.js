@@ -435,6 +435,9 @@ export const VALUE_OPTIONS = new Set([
 // Variadic: they take values until the next token that looks like an option.
 const MULTI_VALUE_OPTIONS = new Set(['--theme', '--preflight-option']);
 
+// Used to rewrite paths in place, which needs each value's position. A misread
+// here costs a theme that is not found; the outputs, where a misread could cost
+// files, are read by vivliostyleOutputs instead.
 // The values among vivliostyle tokens, each as { option, index, prefix }:
 // tokens[index] is prefix + value, prefix being "--name=" or "-x" when the
 // value is joined to its option and "" when it is a token of its own.
@@ -526,11 +529,53 @@ export function outputPath(input, output) {
   return pdf;
 }
 
-// The paths a config's -o tokens add as outputs, resolved against baseDir.
-export function configOutputs(tokens, baseDir) {
-  return optionValues(tokens)
-    .filter(({ option }) => option === '--output')
-    .map(({ index, prefix }) => path.resolve(baseDir, tokens[index].slice(prefix.length)));
+// vivliostyle's build options that take no value. With VALUE_OPTIONS they are
+// the whole of what `vivliostyle build --help` lists, plus --sandbox, which it
+// hides.
+export const FLAG_OPTIONS = new Set([
+  '--crop-marks',
+  '--single-doc',
+  '--press-ready',
+  '--cmyk',
+  '--sandbox',
+  '--ignore-https-errors',
+  '--no-enable-static-serve',
+  '--no-vite-config-file',
+  '--version',
+]);
+const FLAG_SHORT_OPTIONS = { '-m': '--crop-marks', '-d': '--single-doc', '-p': '--press-ready', '-v': '--version' };
+
+// The outputs vivliostyle will write for these build arguments, resolved
+// against the cwd it runs in. The guard below rests on this, so it is not
+// worked out by hand: commander's reading of a token has corners no copy kept
+// up with ("-mm-output=x" is -m, -m, --output=x). The arguments are parsed by
+// the commander vivliostyle itself loads, set up with vivliostyle's options;
+// the deps test holds the two lists to its --help. Arguments this parse cannot
+// read are refused rather than passed on unchecked.
+export function vivliostyleOutputs(args, cwd) {
+  const req = createRequire(createRequire(import.meta.url).resolve('@vivliostyle/cli/package.json'));
+  const { Command } = req('commander');
+  const shortOf = Object.fromEntries(
+    Object.entries({ ...SHORT_OPTIONS, ...FLAG_SHORT_OPTIONS }).map(([short, long]) => [long, short])
+  );
+  const flags = (long) => (shortOf[long] ? `${shortOf[long]}, ${long}` : long);
+  const outputs = [];
+  const program = new Command()
+    .exitOverride()
+    .configureOutput({ writeOut() {}, writeErr() {} })
+    .arguments('[input]');
+  for (const long of VALUE_OPTIONS) {
+    const value = MULTI_VALUE_OPTIONS.has(long) ? '<value...>' : '<value>';
+    if (long === '--output') program.option(`${flags(long)} ${value}`, '', (v) => outputs.push(v));
+    else program.option(`${flags(long)} ${value}`);
+  }
+  for (const long of FLAG_OPTIONS) program.option(flags(long));
+  try {
+    program.parse(args, { from: 'user' });
+  } catch (err) {
+    throw new Error(`could not read the vivliostyle arguments in the config: ${err.message}`);
+  }
+  return outputs.map((output) => path.resolve(cwd, output));
 }
 
 // Refuse a config output that would cost the user files. An -o without an
@@ -626,17 +671,30 @@ function main() {
   }
 
   const pdf = outputPath(input, output);
+  const outMd = path.join(workdir, 'out.md');
+  const builtPdf = path.join(workdir, 'out.pdf');
+  // Run from workdir: vivliostyle auto-loads vivliostyle.config.* from its cwd,
+  // and such a config would override the entry/output we pass on the command line.
+  // That same move would send a relative theme or stylesheet looking in the
+  // workdir, so those are resolved first, against the directory mermaid-cli's
+  // relative paths are already resolved against.
+  const vivliostyleArgs = [
+    'build',
+    outMd,
+    '-s',
+    'A4',
+    '-o',
+    builtPdf,
+    ...resolvePathArgs(['-T', theme, ...config.vivliostyle], process.cwd(), workdir),
+  ];
+  // Checked on the very arguments vivliostyle will get, before either tool runs.
   try {
-    checkConfigOutputs(configOutputs(config.vivliostyle, process.cwd()), {
-      pdf,
-      protect: [process.cwd(), srcDir, path.resolve(input)],
-    });
+    const extra = vivliostyleOutputs(vivliostyleArgs.slice(1), workdir).filter((o) => o !== builtPdf);
+    checkConfigOutputs(extra, { pdf, protect: [process.cwd(), srcDir, path.resolve(input)] });
   } catch (err) {
     console.error(`merv: ${err.message}`);
     process.exit(1);
   }
-  const outMd = path.join(workdir, 'out.md');
-  const builtPdf = path.join(workdir, 'out.pdf');
 
   // Config tokens go last so they can override the arguments merv chose for the
   // options where the child tool lets the last occurrence win.
@@ -655,25 +713,7 @@ function main() {
   // status alone would never tell the user.
   const { missing } = prepareMarkdown(outMd, srcDir, workdir);
   for (const ref of missing) console.error(`merv: referenced file not found: ${ref} (looked in ${srcDir})`);
-  // Run from workdir: vivliostyle auto-loads vivliostyle.config.* from its cwd,
-  // and such a config would override the entry/output we pass on the command line.
-  // That same move would send a relative theme or stylesheet looking in the
-  // workdir, so those are resolved first, against the directory mermaid-cli's
-  // relative paths are already resolved against.
-  runTool(
-    '@vivliostyle/cli',
-    'vivliostyle',
-    [
-      'build',
-      outMd,
-      '-s',
-      'A4',
-      '-o',
-      builtPdf,
-      ...resolvePathArgs(['-T', theme, ...config.vivliostyle], process.cwd(), workdir),
-    ],
-    workdir
-  );
+  runTool('@vivliostyle/cli', 'vivliostyle', vivliostyleArgs, workdir);
   try {
     commitPdf(builtPdf, pdf);
   } catch (err) {
