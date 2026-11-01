@@ -405,6 +405,10 @@ const PATH_OPTIONS = new Set([
 const MULTI_VALUE_OPTIONS = new Set(['-T', '--theme']);
 // The ones whose file the browser loads from vivliostyle's server.
 const SERVED_OPTIONS = new Set(['-T', '--theme', '--style', '--user-style']);
+// Each -o in a config adds an output to the one merv asks for. It names a file
+// still to be written, so it is resolved whether or not it exists; left
+// relative, it would land in the workdir and be deleted with it.
+const OUTPUT_OPTIONS = new Set(['-o', '--output']);
 
 // Point the file values among vivliostyle tokens at something vivliostyle can
 // use from the workdir it runs in. A relative path is resolved against baseDir,
@@ -418,6 +422,7 @@ export function resolvePathArgs(tokens, baseDir, workdir) {
   let copies = 0;
   const resolve = (option, value) => {
     const abs = path.resolve(baseDir, value);
+    if (OUTPUT_OPTIONS.has(option)) return abs;
     if (!fs.existsSync(abs)) return value;
     if (!SERVED_OPTIONS.has(option) || !fs.statSync(abs).isFile()) return abs;
     const dir = path.join(workdir, '_styles');
@@ -431,10 +436,12 @@ export function resolvePathArgs(tokens, baseDir, workdir) {
     const joined = token.match(/^(--[\w-]+)=([\s\S]*)$/);
     if (joined) {
       option = null;
-      return PATH_OPTIONS.has(joined[1]) ? `${joined[1]}=${resolve(joined[1], joined[2])}` : token;
+      return PATH_OPTIONS.has(joined[1]) || OUTPUT_OPTIONS.has(joined[1])
+        ? `${joined[1]}=${resolve(joined[1], joined[2])}`
+        : token;
     }
     if (token.startsWith('-')) {
-      option = PATH_OPTIONS.has(token) ? token : null;
+      option = PATH_OPTIONS.has(token) || OUTPUT_OPTIONS.has(token) ? token : null;
       return token;
     }
     if (!option) return token;
@@ -442,23 +449,6 @@ export function resolvePathArgs(tokens, baseDir, workdir) {
     if (!MULTI_VALUE_OPTIONS.has(option)) option = null;
     return resolve(current, token);
   });
-}
-
-// Take vivliostyle's -o out of config tokens and return the last one's value.
-// merv has vivliostyle write into the workdir and moves the PDF out itself, so a
-// config's -o would otherwise point vivliostyle somewhere merv never looks. It
-// stays the last word on where the PDF goes, as the config is everywhere else.
-export function takeOutput(tokens) {
-  const rest = [];
-  let output;
-  for (let i = 0; i < tokens.length; i++) {
-    const token = tokens[i];
-    const joined = token.match(/^--output=([\s\S]*)$/);
-    if (joined) output = joined[1];
-    else if ((token === '-o' || token === '--output') && i + 1 < tokens.length) output = tokens[++i];
-    else rest.push(token);
-  }
-  return { tokens: rest, output };
 }
 
 // Move the PDF vivliostyle wrote in the workdir to where it was asked for. Up to
@@ -505,8 +495,7 @@ function main() {
     console.error(err.message);
     process.exit(1);
   }
-  const vivliostyle = takeOutput(config.vivliostyle);
-  const output = vivliostyle.output ?? args.output;
+  const output = args.output;
 
   const cacheRoot = path.join(
     process.env.XDG_CACHE_HOME || path.join(os.homedir(), '.cache'),
@@ -535,11 +524,7 @@ function main() {
   }
 
   const base = input.endsWith('.md') ? input.slice(0, -3) : input;
-  let pdf = output ? path.resolve(output) : path.resolve(base + '.pdf');
-  // vivliostyle's -o also takes a directory, and a config may well use it so.
-  if (output && (/[\\/]$/.test(output) || fs.statSync(pdf, { throwIfNoEntry: false })?.isDirectory())) {
-    pdf = path.join(pdf, path.basename(base) + '.pdf');
-  }
+  const pdf = output ? path.resolve(output) : path.resolve(base + '.pdf');
   const outMd = path.join(workdir, 'out.md');
   const builtPdf = path.join(workdir, 'out.pdf');
 
@@ -575,7 +560,7 @@ function main() {
       'A4',
       '-o',
       builtPdf,
-      ...resolvePathArgs(['-T', theme, ...vivliostyle.tokens], process.cwd(), workdir),
+      ...resolvePathArgs(['-T', theme, ...config.vivliostyle], process.cwd(), workdir),
     ],
     workdir
   );

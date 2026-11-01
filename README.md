@@ -129,8 +129,10 @@ Both keys are optional. Filenames and search order:
   uses none. A `--config` file that does not exist is an error, not a reason
   to fall back to the search.
 - Config args are appended after `merv`'s own, so where the last occurrence
-  wins, the config wins — including over `-T` and `-o` on the command line.
-  A `-o` in `vivliostyle` names where the PDF goes, file or directory.
+  wins, the config wins — including over `-T` on the command line.
+- `-o` is the exception: `vivliostyle` takes each one as another output, so a
+  `-o` in the config writes a copy there as well, each `-o` followed by an
+  optional `-f` for its format.
 - Relative paths in a config are resolved against the current directory, not
   the directory the config sits in — the same rule `mermaid-cli` follows for
   its arguments and `vivliostyle` for its own `vivliostyle.config.js`. A

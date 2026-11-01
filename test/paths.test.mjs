@@ -47,6 +47,16 @@ try {
   );
   assert.equal(resolve(['--style', 'a.css', 'a.css'])[2], 'a.css', '--style takes one value only');
 
+  // A config's -o names a file still to be written, so it is resolved even
+  // though nothing is there yet; -f after it is left alone.
+  assert.deepEqual(resolve(['-o', 'extra.pdf', '-f', 'pdf', '--output=web']), [
+    '-o',
+    path.join(tmp, 'extra.pdf'),
+    '-f',
+    'pdf',
+    `--output=${path.join(tmp, 'web')}`,
+  ]);
+
   // End to end: vivliostyle runs from the workdir, where "./theme.css" used to
   // name nothing and the build stopped with "Could not determine the package
   // name" -- and an absolute path built fine with the theme silently missing,

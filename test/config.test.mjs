@@ -112,14 +112,15 @@ try {
     });
 
   // merv asks for A4, so a page narrower than that is the config's -s winning.
-  // The config's -o wins over the command line's the same way, and is
-  // resolved against the cwd like the rest.
+  // vivliostyle takes each -o as one more output, so the config's adds a PDF
+  // rather than replacing merv's; relative, it is resolved against the cwd
+  // instead of landing in the workdir and being deleted with it.
   write('cwd', { vivliostyle: ['-s', 'B5', '-o', 'from-config.pdf'] });
   assert.equal(build().status, 0, 'a config build should exit 0');
   const fromConfig = path.join(tmp, dirs.cwd, 'from-config.pdf');
-  assert.ok(fs.existsSync(fromConfig), "the config's -o should name where the PDF goes");
-  assert.ok(!fs.existsSync(pdf), "the command line's -o should lose to the config's");
-  const width = pageWidth(fromConfig);
+  assert.ok(fs.existsSync(pdf), "merv's own output should still be written");
+  assert.ok(fs.existsSync(fromConfig), "the config's -o should add an output next to the cwd");
+  const width = pageWidth(pdf);
   assert.ok(width < 560, `the vivliostyle tokens should reach vivliostyle (page is ${width}pt wide)`);
 
   // mermaid-cli has no comparable effect to measure, so prove arrival by an
