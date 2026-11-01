@@ -20,6 +20,9 @@ fs.mkdirSync(workdir);
 fs.writeFileSync(path.join(srcDir, 'img.png'), 'png');
 fs.writeFileSync(path.join(srcDir, 'chart(v2).png'), 'png');
 fs.writeFileSync(path.join(srcDir, 'icon.svg'), 'svg');
+// Outside both the source and the workdir, reached by absolute path.
+fs.mkdirSync(path.join(tmp, 'elsewhere'));
+fs.writeFileSync(path.join(tmp, 'elsewhere', 'far.png'), 'png');
 fs.writeFileSync(path.join(srcDir, 'sub', '日本語 名前.png'), 'png');
 // What mermaid-cli leaves next to the markdown it rewrote.
 fs.writeFileSync(path.join(workdir, 'out-1.svg'), 'svg');
@@ -47,6 +50,8 @@ parentheses: ![p](./chart(v2).png)
 fragment: ![f](./icon.svg#symbol)
 
 query: ![q](./img.png?v=2)
+
+absolute: ![a](${path.join(tmp, 'elsewhere', 'far.png')})
 
 reference: ![r][ref]
 
@@ -105,7 +110,7 @@ try {
     'reference definitions should point at a copied asset'
   );
 
-  for (const label of ['parentheses:', 'fragment:', 'query:']) {
+  for (const label of ['parentheses:', 'fragment:', 'query:', 'absolute:']) {
     assert.match(line(label), /_assets\//, `${label} should point at a copied asset`);
   }
   assert.match(line('parentheses:'), /\]\(_assets\/[\w.-]+\)$/, 'the whole parenthesised path should be replaced');

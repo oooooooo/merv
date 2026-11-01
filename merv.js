@@ -94,7 +94,11 @@ function resolveAsset(ref, srcDir, workdir) {
   for (const candidate of candidates) {
     // mermaid-cli writes the diagrams it extracted next to the intermediate
     // markdown, so those references already resolve and must be left alone.
-    if (fs.existsSync(path.resolve(workdir, candidate))) return 'workdir';
+    // Only what lands inside the workdir counts: an absolute path or a "../"
+    // resolves out of it, where vivliostyle's server cannot reach.
+    const inWorkdir = path.resolve(workdir, candidate);
+    const rel = path.relative(workdir, inWorkdir);
+    if (rel && !rel.startsWith('..') && !path.isAbsolute(rel) && fs.existsSync(inWorkdir)) return 'workdir';
     const abs = path.resolve(srcDir, candidate);
     if (fs.existsSync(abs) && fs.statSync(abs).isFile()) return abs;
   }
