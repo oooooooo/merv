@@ -47,6 +47,8 @@ try {
   );
   assert.equal(resolve(['--style', 'a.css', 'a.css'])[2], 'a.css', '--style takes one value only');
   assert.equal(resolve(['--title', '--style=a.css'])[1], '--style=a.css', 'a title is not a stylesheet');
+  const joined = resolve(['-T./a.css'])[0];
+  assert.ok(joined.startsWith('-T') && inWorkdir(joined.slice(2), 'a'), `-T joined to its value should be copied: ${joined}`);
 
   // A config's -o names a file still to be written, so it is resolved even
   // though nothing is there yet; -f after it is left alone.

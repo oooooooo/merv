@@ -449,15 +449,18 @@ export function optionValues(tokens) {
       if (VALUE_OPTIONS.has(joined[1])) values.push({ option: joined[1], index: i, prefix: joined[0] });
       continue;
     }
-    // Short flags can be run together, as commander reads them: "-mo out"
-    // is -m and then -o taking the next token, "-mlja" is -m and then -l
-    // taking "ja". The first letter that takes a value takes the rest.
+    // A short flag can carry its value or be run together with others, as
+    // commander reads them: "-o/out" is -o taking "/out", "-mo out" is -m and
+    // then -o taking the next token, "-mlja" is -m and then -l taking "ja".
+    // Letters are read until one takes a value, which takes whatever follows
+    // it, letter or not.
     let option = token;
-    if (/^-[A-Za-z]{2,}/.test(token)) {
-      const at = [...token.slice(1)].findIndex((c) => SHORT_OPTIONS[`-${c}`]);
-      if (at < 0) continue;
-      option = SHORT_OPTIONS[`-${token[at + 1]}`];
-      const prefix = token.slice(0, at + 2);
+    if (/^-[A-Za-z]./.test(token)) {
+      let at = 1;
+      while (at < token.length && /[A-Za-z]/.test(token[at]) && !SHORT_OPTIONS[`-${token[at]}`]) at++;
+      if (!SHORT_OPTIONS[`-${token[at]}`]) continue;
+      option = SHORT_OPTIONS[`-${token[at]}`];
+      const prefix = token.slice(0, at + 1);
       if (token.length > prefix.length) {
         values.push({ option, index: i, prefix });
         continue;

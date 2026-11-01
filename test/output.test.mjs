@@ -64,6 +64,12 @@ try {
   assert.deepEqual(configOutputs(['-ml', '--title', '-o', 'p'], tmp), [at('p')], '-ml takes --title as -l');
   assert.deepEqual(configOutputs(['-mo', 'q', '-mlja', '-mpox.pdf'], tmp), [at('q'), at('x.pdf')]);
   assert.deepEqual(configOutputs(['--', '-o', 'r'], tmp), [], 'nothing after -- is an option');
+  // A value joined to its flag can start with anything, a path included.
+  assert.deepEqual(configOutputs(['-o/abs/project', '-o./extra.pdf', '-mo/x'], tmp), [
+    '/abs/project',
+    at('extra.pdf'),
+    '/x',
+  ]);
 
   // An extensionless -o is a webpub directory vivliostyle deletes before
   // writing, so one holding the project, the input or the cwd is refused; so is
