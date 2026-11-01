@@ -50,6 +50,14 @@ undoing any of them.
 - **`@vivliostyle/vfm` is a direct dependency pinned to the version
   `@vivliostyle/cli` pins.** merv asks it what is code so that it agrees with
   the renderer; `test/deps.test.mjs` fails when a CLI bump leaves them apart.
+- **`npm-shrinkwrap.json` is a hand-kept copy of `package-lock.json`, and
+  releases are published with npm 11.** The `overrides` that pin patched
+  transitive dependencies only apply in this repository; users get them
+  through the shrinkwrap. npm 12 neither writes the file nor packs it, so
+  after any dependency change run `cp package-lock.json npm-shrinkwrap.json`
+  (`test/deps.test.mjs` fails until you do), and publish with
+  `npx npm@11 publish`. Where npm is set to `ignore-scripts`, as on the
+  maintainer's machine, `prepublishOnly` does not run: run `npm test` first.
 - **`bin` is `merv.js`, not `./merv.js`.** npm strips a `./` target while
   publishing, which would ship a package with no command.
 

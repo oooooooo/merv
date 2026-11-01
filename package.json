@@ -7,7 +7,8 @@
     "merv": "merv.js"
   },
   "files": [
-    "merv.js"
+    "merv.js",
+    "npm-shrinkwrap.json"
   ],
   "engines": {
     "node": ">=22.13.0"
