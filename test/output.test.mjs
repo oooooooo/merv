@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { commitPdf } from '../merv.js';
+import { checkConfigOutputs, commitPdf, configOutputs, outputPath } from '../merv.js';
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'merv-output-'));
 const at = (name) => path.join(tmp, name);
@@ -41,6 +41,31 @@ try {
   const nested = at('a/b/doc.pdf');
   commitPdf(at('built.pdf'), nested);
   assert.equal(fs.readFileSync(nested, 'utf8'), pdf, 'missing parent directories should be created');
+
+  // A directory given to -o, written as one or already existing, gets a PDF
+  // inside it named after the input.
+  fs.mkdirSync(at('existing'));
+  assert.equal(outputPath('dir/doc.md', at('existing')), at('existing/doc.pdf'));
+  assert.equal(outputPath('dir/doc.md', `${at('new')}/`), at('new/doc.pdf'));
+  assert.equal(outputPath('dir/doc.md', at('named.pdf')), at('named.pdf'));
+  assert.equal(outputPath(at('doc.md')), at('doc.pdf'));
+
+  // A config's -o tokens, in each of their spellings, resolved against the cwd.
+  assert.deepEqual(configOutputs(['-o', 'a.pdf', '-f', 'pdf', '--output=web', '-s', 'B5'], tmp), [
+    at('a.pdf'),
+    at('web'),
+  ]);
+
+  // An extensionless -o is a webpub directory vivliostyle deletes before
+  // writing, so one holding the project, the input or the cwd is refused; so is
+  // one that would overwrite merv's own PDF before the build has succeeded.
+  const project = at('project');
+  const guard = { pdf: path.join(project, 'doc.pdf'), protect: [project, path.join(project, 'doc.md')] };
+  for (const output of [project, tmp, path.dirname(tmp)]) {
+    assert.throws(() => checkConfigOutputs([output], guard), /which it could delete/, `${output} should be refused`);
+  }
+  assert.throws(() => checkConfigOutputs([guard.pdf], guard), /merv's own output/);
+  checkConfigOutputs([path.join(project, 'web'), at('other.pdf')], guard);
 
   console.log('output test passed');
 } finally {

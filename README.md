@@ -21,7 +21,7 @@ npm install -g @noooooooode/merv
 merv input.md && open input.pdf
 ```
 
-Needs Node.js **>= 22.12.0**, the floor `@vivliostyle/cli` sets.
+Needs Node.js **>= 22.13.0**, the floor `@mermaid-js/mermaid-cli` sets.
 
 Both tools underneath draw pages with a headless Chrome, which Puppeteer
 downloads on install into `~/.cache/puppeteer` — around 650 MB, and the reason
@@ -132,7 +132,10 @@ Both keys are optional. Filenames and search order:
   wins, the config wins — including over `-T` on the command line.
 - `-o` is the exception: `vivliostyle` takes each one as another output, so a
   `-o` in the config writes a copy there as well, each `-o` followed by an
-  optional `-f` for its format.
+  optional `-f` for its format. Only `merv`'s own output is kept safe when a
+  build fails; these are written by `vivliostyle` directly. An `-o` without an
+  extension is a webpub directory, which `vivliostyle` empties first, so one
+  that holds the current directory or the input is refused.
 - Relative paths in a config are resolved against the current directory, not
   the directory the config sits in — the same rule `mermaid-cli` follows for
   its arguments and `vivliostyle` for its own `vivliostyle.config.js`. A

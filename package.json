@@ -10,7 +10,7 @@
     "merv.js"
   ],
   "engines": {
-    "node": ">=22.12.0"
+    "node": ">=22.13.0"
   },
   "scripts": {
     "test": "node --test --test-concurrency=1 \"test/*.test.mjs\"",

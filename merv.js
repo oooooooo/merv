@@ -451,6 +451,50 @@ export function resolvePathArgs(tokens, baseDir, workdir) {
   });
 }
 
+// Where merv writes the PDF: -o, or the input with .pdf for .md. "-o dist/" or
+// an existing directory means a PDF inside it, named after the input; renamed
+// over the directory itself, it would fail or replace it.
+export function outputPath(input, output) {
+  const base = input.endsWith('.md') ? input.slice(0, -3) : input;
+  if (!output) return path.resolve(base + '.pdf');
+  const pdf = path.resolve(output);
+  if (/[\\/]$/.test(output) || fs.statSync(pdf, { throwIfNoEntry: false })?.isDirectory()) {
+    return path.join(pdf, path.basename(base) + '.pdf');
+  }
+  return pdf;
+}
+
+// The paths a config's -o tokens add as outputs, resolved against baseDir.
+export function configOutputs(tokens, baseDir) {
+  const outputs = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const joined = tokens[i].match(/^--output=([\s\S]*)$/);
+    if (joined) outputs.push(joined[1]);
+    else if ((tokens[i] === '-o' || tokens[i] === '--output') && i + 1 < tokens.length) outputs.push(tokens[++i]);
+  }
+  return outputs.map((output) => path.resolve(baseDir, output));
+}
+
+// Refuse a config output that would cost the user files. An -o without an
+// extension is a webpub directory, which vivliostyle deletes recursively before
+// writing, so "-o ." would take the whole project with it: vivliostyle guards
+// against an output holding its sources, but merv hands it a copy in the
+// workdir, so that guard never fires. And one that is merv's own output would
+// be written there directly, overwriting the old PDF before the build has
+// succeeded, which is what commitPdf is there to prevent.
+export function checkConfigOutputs(outputs, { pdf, protect }) {
+  const contains = (dir, p) => {
+    const rel = path.relative(dir, p);
+    return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+  };
+  for (const output of outputs) {
+    for (const dir of protect) {
+      if (contains(output, dir)) throw new Error(`config output ${output} contains ${dir}, which it could delete`);
+    }
+    if (output === pdf) throw new Error(`config output ${output} is merv's own output; drop it from the config`);
+  }
+}
+
 // Move the PDF vivliostyle wrote in the workdir to where it was asked for. Up to
 // here a failed build has left any earlier PDF at that path alone, and this
 // keeps it that way: the copy lands next to the target and is renamed over it,
@@ -523,8 +567,16 @@ function main() {
     // No cache yet, or another run was mid-publish: install from scratch.
   }
 
-  const base = input.endsWith('.md') ? input.slice(0, -3) : input;
-  const pdf = output ? path.resolve(output) : path.resolve(base + '.pdf');
+  const pdf = outputPath(input, output);
+  try {
+    checkConfigOutputs(configOutputs(config.vivliostyle, process.cwd()), {
+      pdf,
+      protect: [process.cwd(), srcDir, path.resolve(input)],
+    });
+  } catch (err) {
+    console.error(`merv: ${err.message}`);
+    process.exit(1);
+  }
   const outMd = path.join(workdir, 'out.md');
   const builtPdf = path.join(workdir, 'out.pdf');
 

@@ -99,6 +99,18 @@ try {
   assert.equal(rejected.status, 1, 'a rejected config should exit 1');
   assert.doesNotMatch(rejected.stderr, /at \w+ \(/, 'a rejected config should not print a stack');
 
+  // An extensionless -o is a webpub directory, which vivliostyle empties before
+  // writing: "-o ." would have deleted the project. It must stop before any
+  // tool runs, with the input still there.
+  const project = path.join(tmp, 'project');
+  fs.mkdirSync(project);
+  fs.copyFileSync(sample, path.join(project, 'doc.md'));
+  fs.writeFileSync(path.join(project, 'merv.json'), JSON.stringify({ vivliostyle: ['-o', '.'] }));
+  const refused = spawnSync(process.execPath, [merv, 'doc.md'], { cwd: project, encoding: 'utf8', env });
+  assert.equal(refused.status, 1, 'a config output holding the project should be refused');
+  assert.match(refused.stderr, /which it could delete/);
+  assert.ok(fs.existsSync(path.join(project, 'doc.md')), 'the input should survive');
+
   // End to end, by an effect the PDF can be measured for rather than by a build
   // that merely survives: tokens silently dropped would exit 0 all the same.
   const pdf = path.join(tmp, 'out.pdf');
