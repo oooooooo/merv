@@ -162,6 +162,21 @@ The fix needs root, such as an AppArmor profile for Puppeteer's Chrome; see
 [Puppeteer's troubleshooting guide](https://pptr.dev/troubleshooting).
 `merv` does not change these settings for you.
 
+## How it works
+
+Each run works in a private directory of its own, and only a PDF that came out
+whole replaces the one at the output path:
+
+```mermaid
+flowchart TD
+    input["input.md"] --> mmdc["mmdc<br/>Mermaid blocks → SVG"]
+    mmdc --> prepare["merv<br/>copy images, page breaks, diagram sizing"]
+    prepare --> viv["vivliostyle build<br/>theme, page layout"]
+    viv --> check{"complete PDF?"}
+    check -- yes --> output["input.pdf"]
+    check -- no --> keep["previous input.pdf kept"]
+```
+
 ## License
 
 [MIT](LICENSE)
