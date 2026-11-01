@@ -51,10 +51,14 @@ try {
   assert.equal(outputPath(at('doc.md')), at('doc.pdf'));
 
   // A config's -o tokens, in each of their spellings, resolved against the cwd.
-  assert.deepEqual(configOutputs(['-o', 'a.pdf', '-f', 'pdf', '--output=web', '-s', 'B5'], tmp), [
+  assert.deepEqual(configOutputs(['-o', 'a.pdf', '-f', 'pdf', '--output=web', '-ob.pdf', '-s', 'B5'], tmp), [
     at('a.pdf'),
     at('web'),
+    at('b.pdf'),
   ]);
+  // vivliostyle hands an option the token after it even when that token looks
+  // like an option, so these are a title and a theme, not outputs.
+  assert.deepEqual(configOutputs(['--title', '--output=.', '-T', 'a', 'b', '--author', '-o'], tmp), []);
 
   // An extensionless -o is a webpub directory vivliostyle deletes before
   // writing, so one holding the project, the input or the cwd is refused; so is

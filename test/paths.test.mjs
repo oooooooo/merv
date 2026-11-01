@@ -46,6 +46,7 @@ try {
     ['-T', '@vivliostyle/theme-slide', '--style', 'https://example.com/a.css', '--title', 'a.css']
   );
   assert.equal(resolve(['--style', 'a.css', 'a.css'])[2], 'a.css', '--style takes one value only');
+  assert.equal(resolve(['--title', '--style=a.css'])[1], '--style=a.css', 'a title is not a stylesheet');
 
   // A config's -o names a file still to be written, so it is resolved even
   // though nothing is there yet; -f after it is left alone.

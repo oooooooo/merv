@@ -391,24 +391,81 @@ function parseArgs(argv) {
   return { theme, output, input, configFile, noConfig, keepWorkDir, verbose };
 }
 
-// The vivliostyle build options whose value names a file. -T takes several.
-const PATH_OPTIONS = new Set([
-  '-T',
-  '--theme',
+// Every vivliostyle build option that takes a value, by its long name, as
+// `vivliostyle build --help` lists them. The parse below has to know all of
+// them, not just the ones merv acts on: commander hands an option the token
+// after it even when that token starts with "-", so in "--title --output=."
+// the second token is a title, not an output.
+const SHORT_OPTIONS = {
+  '-c': '--config',
+  '-o': '--output',
+  '-f': '--format',
+  '-s': '--size',
+  '-t': '--timeout',
+  '-T': '--theme',
+  '-l': '--language',
+};
+export const VALUE_OPTIONS = new Set([
+  ...Object.values(SHORT_OPTIONS),
+  '--bleed',
+  '--crop-offset',
+  '--css',
   '--style',
   '--user-style',
-  '-c',
-  '--config',
+  '--title',
+  '--author',
+  '--reading-progression',
+  '--render-mode',
+  '--preflight',
+  '--preflight-option',
   '--executable-browser',
+  '--image',
+  '--viewer',
+  '--viewer-param',
+  '--browser',
+  '--proxy-server',
+  '--proxy-bypass',
+  '--proxy-user',
+  '--proxy-pass',
+  '--log-level',
+  '--host',
+  '--port',
   '--vite-config-file',
 ]);
-const MULTI_VALUE_OPTIONS = new Set(['-T', '--theme']);
+// Variadic: they take values until the next token that looks like an option.
+const MULTI_VALUE_OPTIONS = new Set(['--theme', '--preflight-option']);
+
+// The values among vivliostyle tokens, each as { option, index, prefix }:
+// tokens[index] is prefix + value, prefix being "--name=" or "-x" when the
+// value is joined to its option and "" when it is a token of its own.
+export function optionValues(tokens) {
+  const values = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    const joined = token.match(/^(--[\w-]+)=/);
+    if (joined) {
+      if (VALUE_OPTIONS.has(joined[1])) values.push({ option: joined[1], index: i, prefix: joined[0] });
+      continue;
+    }
+    const short = token.match(/^-[A-Za-z]/)?.[0];
+    if (short && token.length > 2 && SHORT_OPTIONS[short]) {
+      values.push({ option: SHORT_OPTIONS[short], index: i, prefix: short });
+      continue;
+    }
+    const option = SHORT_OPTIONS[token] ?? token;
+    if (!VALUE_OPTIONS.has(option) || i + 1 >= tokens.length) continue;
+    values.push({ option, index: ++i, prefix: '' });
+    if (MULTI_VALUE_OPTIONS.has(option)) {
+      while (i + 1 < tokens.length && !tokens[i + 1].startsWith('-')) values.push({ option, index: ++i, prefix: '' });
+    }
+  }
+  return values;
+}
+
+// The ones whose value names a file.
+const PATH_OPTIONS = new Set(['--theme', '--style', '--user-style', '--config', '--executable-browser', '--vite-config-file']);
 // The ones whose file the browser loads from vivliostyle's server.
-const SERVED_OPTIONS = new Set(['-T', '--theme', '--style', '--user-style']);
-// Each -o in a config adds an output to the one merv asks for. It names a file
-// still to be written, so it is resolved whether or not it exists; left
-// relative, it would land in the workdir and be deleted with it.
-const OUTPUT_OPTIONS = new Set(['-o', '--output']);
+const SERVED_OPTIONS = new Set(['--theme', '--style', '--user-style']);
 
 // Point the file values among vivliostyle tokens at something vivliostyle can
 // use from the workdir it runs in. A relative path is resolved against baseDir,
@@ -417,12 +474,15 @@ const OUTPUT_OPTIONS = new Set(['-o', '--output']);
 // written. A stylesheet file is copied into the workdir as well, because the
 // server vivliostyle loads it through is rooted there and answers 404 for
 // anything outside -- an absolute path is not enough. A directory theme is
-// installed by vivliostyle itself, so its absolute path is.
+// installed by vivliostyle itself, so its absolute path is. Each -o in a config
+// adds an output to the one merv asks for; it names a file still to be
+// written, so it is resolved whether or not it exists, since left relative it
+// would land in the workdir and be deleted with it.
 export function resolvePathArgs(tokens, baseDir, workdir) {
   let copies = 0;
   const resolve = (option, value) => {
     const abs = path.resolve(baseDir, value);
-    if (OUTPUT_OPTIONS.has(option)) return abs;
+    if (option === '--output') return abs;
     if (!fs.existsSync(abs)) return value;
     if (!SERVED_OPTIONS.has(option) || !fs.statSync(abs).isFile()) return abs;
     const dir = path.join(workdir, '_styles');
@@ -431,24 +491,12 @@ export function resolvePathArgs(tokens, baseDir, workdir) {
     fs.copyFileSync(abs, copy);
     return copy;
   };
-  let option = null;
-  return tokens.map((token) => {
-    const joined = token.match(/^(--[\w-]+)=([\s\S]*)$/);
-    if (joined) {
-      option = null;
-      return PATH_OPTIONS.has(joined[1]) || OUTPUT_OPTIONS.has(joined[1])
-        ? `${joined[1]}=${resolve(joined[1], joined[2])}`
-        : token;
-    }
-    if (token.startsWith('-')) {
-      option = PATH_OPTIONS.has(token) || OUTPUT_OPTIONS.has(token) ? token : null;
-      return token;
-    }
-    if (!option) return token;
-    const current = option;
-    if (!MULTI_VALUE_OPTIONS.has(option)) option = null;
-    return resolve(current, token);
-  });
+  const out = [...tokens];
+  for (const { option, index, prefix } of optionValues(tokens)) {
+    if (option !== '--output' && !PATH_OPTIONS.has(option)) continue;
+    out[index] = prefix + resolve(option, tokens[index].slice(prefix.length));
+  }
+  return out;
 }
 
 // Where merv writes the PDF: -o, or the input with .pdf for .md. "-o dist/" or
@@ -466,13 +514,9 @@ export function outputPath(input, output) {
 
 // The paths a config's -o tokens add as outputs, resolved against baseDir.
 export function configOutputs(tokens, baseDir) {
-  const outputs = [];
-  for (let i = 0; i < tokens.length; i++) {
-    const joined = tokens[i].match(/^--output=([\s\S]*)$/);
-    if (joined) outputs.push(joined[1]);
-    else if ((tokens[i] === '-o' || tokens[i] === '--output') && i + 1 < tokens.length) outputs.push(tokens[++i]);
-  }
-  return outputs.map((output) => path.resolve(baseDir, output));
+  return optionValues(tokens)
+    .filter(({ option }) => option === '--output')
+    .map(({ index, prefix }) => path.resolve(baseDir, tokens[index].slice(prefix.length)));
 }
 
 // Refuse a config output that would cost the user files. An -o without an
