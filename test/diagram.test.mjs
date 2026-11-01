@@ -27,6 +27,13 @@ try {
     'a document with a diagram should carry the sizing rule'
   );
 
+  // accDescr and accTitle turn up as the alt text and a title, which used to
+  // hide the diagram from the check.
+  const titled = path.join(workdir, 'titled.md');
+  fs.writeFileSync(titled, '![a [b] "c"](./out-1.svg "My [title] \\"q\\"")\n');
+  prepareMarkdown(titled, tmp, workdir);
+  assert.match(fs.readFileSync(titled, 'utf8'), /max-height/, 'a titled diagram should carry the sizing rule');
+
   // A diagram taller than a page used to run on over two, because an image
   // cannot be split; fitted to the page area, it takes one.
   const tall = path.join(tmp, 'tall.md');

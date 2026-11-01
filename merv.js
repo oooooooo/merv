@@ -136,8 +136,9 @@ const PAGE_BREAK_CSS = [
   ':has(> .merv-pagebreak) { display: block !important; height: auto !important; }',
 ].join('\n');
 // mermaid-cli names each diagram after the markdown it writes, out.md, and
-// links it relative to it.
-const DIAGRAM_REF = /!\[[^\]]*\]\(\.\/out-\d+\.\w+\)/;
+// links it relative to it. Only the destination is matched: accDescr becomes
+// the alt text and accTitle a title after it, and either can hold anything.
+const DIAGRAM_REF = /\]\(\.\/out-\d+\.\w+(?=[\s)])/;
 // A diagram is an image and cannot be split across pages, so a tall one ran on
 // over two. Vivliostyle measures vh against the page area, so this fits it to
 // whatever margins the theme sets. Block, so the line box holding an inline

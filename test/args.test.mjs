@@ -51,8 +51,15 @@ assert.equal(version.out.trim(), pkg.version, '-v should print the package versi
 // before any browser starts.
 const kept = run('--keep-work-dir', path.join(__dirname, 'fixtures', 'missing.md'));
 assert.notEqual(kept.status, 0, 'a missing input should fail');
-const keptDir = kept.out.match(/work directory kept at (\S+)/)?.[1];
+// The path runs to the end of the line: a cache directory can hold spaces, and
+// a path cut short at one would point the cleanup below somewhere else.
+const keptDir = kept.out.match(/work directory kept at (.+)$/m)?.[1];
 assert.ok(keptDir, `--keep-work-dir should print the directory: ${kept.out}`);
+assert.match(
+  keptDir,
+  /[\\/]merv[\\/]work-[^\\/]+$/,
+  `refusing to remove ${keptDir}: it does not look like a merv work directory`
+);
 try {
   assert.ok(fs.existsSync(keptDir), '--keep-work-dir should leave the directory in place');
 } finally {
