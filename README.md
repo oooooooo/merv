@@ -31,15 +31,16 @@ that.
 ### Options
 
 ```text
-Usage: merv [-T theme] [-o output.pdf] input.md
+Usage: merv [-T theme] [-o output.pdf] [--keep-work-dir] input.md
        merv -v | --version
        merv -h | --help
 
 Options:
-  -T, --theme     Vivliostyle theme (default: @vivliostyle/theme-techbook)
-  -o, --output    Output PDF path (default: <input>.pdf)
-  -v, --version   Show version
-  -h, --help      Show this help
+  -T, --theme       Vivliostyle theme (default: @vivliostyle/theme-techbook)
+  -o, --output      Output PDF path (default: <input>.pdf)
+  --keep-work-dir   Keep the intermediate files and print where they are
+  -v, --version     Show version
+  -h, --help        Show this help
 
 Themes:
   https://docs.vivliostyle.org/en/themes/gallery/
@@ -58,6 +59,13 @@ Config, named merv.json or .merv.json (first one found wins):
 
 `mermaid-cli` and `vivliostyle` output is streamed through as-is.
 
+A failed build leaves an existing PDF at the output path untouched: the new
+PDF is checked for a header and end marker before it replaces the old one.
+
+`--keep-work-dir` leaves the intermediate files in place — the Markdown
+`mermaid-cli` produced, the diagrams, and the copied images — and prints the
+directory, which is the place to look when a PDF comes out wrong.
+
 ### Page breaks
 
 Write `<!-- pagebreak -->` to start a new page there:
@@ -71,7 +79,14 @@ The start of the next.
 ```
 
 The marker is matched case-insensitively, works with any theme, and is
-ignored inside code blocks and code spans.
+ignored inside code blocks and code spans. A marker with nothing before it on
+its page — at the start of the document, or right after another marker — is
+dropped rather than leaving a blank page.
+
+### Diagrams
+
+A diagram cannot be split across pages, so one taller than a page is shrunk
+to fit on a single page, at the cost of smaller text.
 
 ## Configuration
 
@@ -98,6 +113,23 @@ Both keys are optional. Filenames and search order:
 
 Treat a `merv.json` from a cloned repository like any other executable
 content: it sets arguments for the browser-driving tools `merv` runs.
+
+## Input documents
+
+Only convert Markdown you trust. Raw HTML in it, scripts included, is rendered
+by a headless Chrome that can read local files `merv` can read and reach
+external URLs.
+
+## Troubleshooting
+
+### Chrome fails to start on Linux
+
+Ubuntu 23.10 and later restrict unprivileged user namespaces, which Chrome's
+sandbox needs, so Chrome can fail to launch even with every shared library
+installed. The error usually mentions the sandbox or `No usable sandbox!`.
+The fix needs root, such as an AppArmor profile for Puppeteer's Chrome; see
+[Puppeteer's troubleshooting guide](https://pptr.dev/troubleshooting).
+`merv` does not change these settings for you.
 
 ## License
 

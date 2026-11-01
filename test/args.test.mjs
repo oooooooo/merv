@@ -46,6 +46,19 @@ const version = run('-v');
 assert.equal(version.status, 0, '-v should exit 0');
 assert.equal(version.out.trim(), pkg.version, '-v should print the package version');
 
+// --keep-work-dir has to keep the directory even when a build fails, since
+// that is when its contents are wanted. A missing input fails in mermaid-cli
+// before any browser starts.
+const kept = run('--keep-work-dir', path.join(__dirname, 'fixtures', 'missing.md'));
+assert.notEqual(kept.status, 0, 'a missing input should fail');
+const keptDir = kept.out.match(/work directory kept at (\S+)/)?.[1];
+assert.ok(keptDir, `--keep-work-dir should print the directory: ${kept.out}`);
+try {
+  assert.ok(fs.existsSync(keptDir), '--keep-work-dir should leave the directory in place');
+} finally {
+  fs.rmSync(keptDir, { recursive: true, force: true });
+}
+
 const noArgs = run();
 assert.equal(noArgs.status, 1, 'no arguments should exit 1');
 assert.match(noArgs.out, /Usage: merv/, 'no arguments should print usage');

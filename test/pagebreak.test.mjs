@@ -28,8 +28,11 @@ try {
   fs.writeFileSync(
     mdPath,
     [
+      'a',
       '<!-- pagebreak -->',
+      'b',
       '<!--pagebreak-->',
+      'c',
       '<!--   PageBreak   -->',
       'text <!-- pagebreak --> text',
       '<!-- not a pagebreak -->',
@@ -42,16 +45,38 @@ try {
   const lines = fs.readFileSync(mdPath, 'utf8').split('\n');
 
   for (const [i, label] of [
-    [0, 'canonical'],
-    [1, 'unspaced'],
-    [2, 'mixed case'],
-    [3, 'inline'],
+    [1, 'canonical'],
+    [3, 'unspaced'],
+    [5, 'mixed case'],
+    [6, 'inline'],
   ]) {
     assert.match(lines[i], /merv-pagebreak/, `the ${label} marker should become a break`);
     assert.doesNotMatch(lines[i], /<!--/, `the ${label} marker should be consumed`);
   }
-  assert.equal(lines[4], '<!-- not a pagebreak -->', 'other comments should be left alone');
-  assert.equal(lines[6], '<!-- pagebreak -->', 'fenced markers should be left alone');
+  assert.equal(lines[7], '<!-- not a pagebreak -->', 'other comments should be left alone');
+  assert.equal(lines[9], '<!-- pagebreak -->', 'fenced markers should be left alone');
+
+  // A break with nothing before it on its page only adds a blank page: at the
+  // top of the document, after frontmatter, or straight after another break.
+  const breaksIn = (source) => {
+    const p = path.join(workdir, 'collapse.md');
+    fs.writeFileSync(p, source);
+    prepareMarkdown(p, tmp, workdir);
+    return fs.readFileSync(p, 'utf8').split('<style>')[0].match(/merv-pagebreak/g)?.length ?? 0;
+  };
+  assert.equal(breaksIn('<!-- pagebreak -->\n\n# a\n'), 0, 'a leading break should be dropped');
+  assert.equal(
+    breaksIn('---\ntitle: t\n---\n\n<!-- pagebreak -->\n\n# a\n'),
+    0,
+    'a break right after frontmatter should be dropped'
+  );
+  assert.equal(
+    breaksIn('a\n\n<!-- pagebreak -->\n\n<!-- pagebreak --><!-- pagebreak -->\n\nb\n'),
+    1,
+    'consecutive breaks should collapse into one'
+  );
+  assert.equal(breaksIn('a\n\n```\nx\n```\n\n<!-- pagebreak -->\n\nb\n'), 1, 'code is content');
+  assert.equal(breaksIn('a\n\n<!-- pagebreak -->\n\n`x`\n\n<!-- pagebreak -->\n\nb\n'), 2, 'a code span is content');
 
   // The rules travel in the document rather than on vivliostyle's --css, which
   // holds a single value a config could otherwise replace.

@@ -9,15 +9,16 @@ import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const USAGE = `Usage: merv [-T theme] [-o output.pdf] input.md
+const USAGE = `Usage: merv [-T theme] [-o output.pdf] [--keep-work-dir] input.md
        merv -v | --version
        merv -h | --help
 
 Options:
-  -T, --theme     Vivliostyle theme (default: @vivliostyle/theme-techbook)
-  -o, --output    Output PDF path (default: <input>.pdf)
-  -v, --version   Show version
-  -h, --help      Show this help
+  -T, --theme       Vivliostyle theme (default: @vivliostyle/theme-techbook)
+  -o, --output      Output PDF path (default: <input>.pdf)
+  --keep-work-dir   Keep the intermediate files and print where they are
+  -v, --version     Show version
+  -h, --help        Show this help
 
 Themes:
   https://docs.vivliostyle.org/en/themes/gallery/
@@ -103,10 +104,13 @@ export function prepareMarkdown(mdPath, srcDir, workdir) {
   };
 
   const md = transformMarkdown(fs.readFileSync(mdPath, 'utf8'), rewrite);
-  // The page break rules travel in the document rather than on vivliostyle's
-  // --css, which holds a single value a merv.json could otherwise replace.
+  // These rules travel in the document rather than on vivliostyle's --css,
+  // which holds a single value a merv.json could otherwise replace.
   // Appended, not prepended, so YAML frontmatter stays on the first line.
-  const style = md.includes(PAGE_BREAK_HTML) ? `\n<style>\n${PAGE_BREAK_CSS}\n</style>\n` : '';
+  const rules = [];
+  if (md.includes(PAGE_BREAK_HTML)) rules.push(PAGE_BREAK_CSS);
+  if (DIAGRAM_REF.test(md)) rules.push(DIAGRAM_CSS);
+  const style = rules.length ? `\n<style>\n${rules.join('\n')}\n</style>\n` : '';
   fs.writeFileSync(mdPath, md + style);
 }
 
@@ -126,6 +130,16 @@ const PAGE_BREAK_CSS = [
   '.merv-pagebreak { break-after: page !important; page-break-after: always !important; }',
   ':has(> .merv-pagebreak) { display: block !important; height: auto !important; }',
 ].join('\n');
+// mermaid-cli names each diagram after the markdown it writes, out.md, and
+// links it relative to it.
+const DIAGRAM_REF = /!\[[^\]]*\]\(\.\/out-\d+\.\w+\)/;
+// A diagram is an image and cannot be split across pages, so a tall one ran on
+// over two. Vivliostyle measures vh against the page area, so this fits it to
+// whatever margins the theme sets. Block, so the line box holding an inline
+// image adds no height; 95vh leaves room for the paragraph's own margins. Those
+// are em, but vivliostyle ignored calc(100vh - 2.5em) when it was tried.
+const DIAGRAM_CSS =
+  'img[src^="./out-"] { display: block; margin: 0 auto; max-width: 100%; max-height: 95vh; }';
 
 function transformMarkdown(md, rewrite) {
   // A rewritten name is plain ASCII with no spaces, so whatever delimiters the
@@ -143,10 +157,32 @@ function transformMarkdown(md, rewrite) {
     return next === bare ? dest : `${quote}${next}${quote}`;
   };
 
+  // A break with nothing on the page before it -- at the top of the document,
+  // or right after another break -- would only produce a blank page, so it is
+  // dropped. Frontmatter is not content: it renders to nothing.
+  let pageHasContent = false;
+  const breakPages = (text) =>
+    text
+      .split(PAGE_BREAK)
+      .map((segment, i) => {
+        const marker = i > 0 && pageHasContent ? PAGE_BREAK_HTML : '';
+        if (marker) pageHasContent = false;
+        if (/\S/.test(segment)) pageHasContent = true;
+        return marker + segment;
+      })
+      .join('');
+
+  const lines = md.split('\n');
+  let frontmatterEnd = -1;
+  if (lines[0] === '---') {
+    const close = lines.findIndex((line, i) => i > 0 && /^(---|\.\.\.)$/.test(line));
+    if (close > 0) frontmatterEnd = close;
+  }
+
   let fence = null;
-  return md
-    .split('\n')
-    .map((line) => {
+  return lines
+    .map((line, lineIndex) => {
+      if (lineIndex <= frontmatterEnd) return line;
       // Code is quoted markdown, not markup: rewriting it would corrupt a
       // document that happens to be about writing markdown.
       const fenceMatch = line.match(FENCE);
@@ -156,14 +192,17 @@ function transformMarkdown(md, rewrite) {
       }
       if (fenceMatch) {
         fence = fenceMatch[1];
+        pageHasContent = true;
         return line;
       }
       return line
         .split(CODE_SPAN)
         .map((part, i) => {
-          if (i % 2 === 1) return part;
-          const rewritten = part
-            .replace(PAGE_BREAK, PAGE_BREAK_HTML)
+          if (i % 2 === 1) {
+            pageHasContent = true;
+            return part;
+          }
+          const rewritten = breakPages(part)
             .replace(INLINE_IMAGE, (_, head, dest) => head + swap(dest))
             .replace(HTML_SRC, (_, head, dest) => head + swapAttribute(dest));
           // A definition is only one if it opens the line, and only the first
@@ -219,6 +258,7 @@ function parseArgs(argv) {
   let theme = '@vivliostyle/theme-techbook';
   let output;
   let input;
+  let keepWorkDir = false;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -234,6 +274,8 @@ function parseArgs(argv) {
       theme = value();
     } else if (arg === '-o' || arg === '--output') {
       output = value();
+    } else if (arg === '--keep-work-dir') {
+      keepWorkDir = true;
     } else if (arg === '-v' || arg === '--version') {
       console.log(getVersion());
       process.exit(0);
@@ -256,11 +298,40 @@ function parseArgs(argv) {
     process.exit(1);
   }
 
-  return { theme, output, input };
+  return { theme, output, input, keepWorkDir };
+}
+
+// Move the PDF vivliostyle wrote in the workdir to where it was asked for. Up to
+// here a failed build has left any earlier PDF at that path alone, and this
+// keeps it that way: the copy lands next to the target and is renamed over it,
+// so the target is the old file or the whole new one, never a partial write.
+// The rename cannot start from the workdir, which may sit on another filesystem.
+export function commitPdf(built, target) {
+  let pdf;
+  try {
+    pdf = fs.readFileSync(built);
+  } catch {
+    throw new Error(`vivliostyle exited 0 but wrote no PDF at ${built}`);
+  }
+  // A truncated file still opens in some viewers, so check both ends rather
+  // than trusting the exit status alone.
+  const tail = pdf.subarray(-1024).toString('latin1');
+  if (!pdf.subarray(0, 5).equals(Buffer.from('%PDF-')) || !/%%EOF\s*$/.test(tail)) {
+    throw new Error(`vivliostyle exited 0 but ${built} is not a complete PDF`);
+  }
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  const temp = path.join(path.dirname(target), `.${path.basename(target)}.${process.pid}.tmp`);
+  try {
+    fs.writeFileSync(temp, pdf);
+    fs.renameSync(temp, target);
+  } catch (err) {
+    fs.rmSync(temp, { force: true });
+    throw err;
+  }
 }
 
 function main() {
-  const { theme, output, input } = parseArgs(process.argv.slice(2));
+  const { theme, output, input, keepWorkDir } = parseArgs(process.argv.slice(2));
   const srcDir = path.dirname(path.resolve(input));
 
   let config;
@@ -280,7 +351,10 @@ function main() {
   fs.mkdirSync(cacheRoot, { recursive: true });
   const workdir = fs.mkdtempSync(path.join(cacheRoot, 'work-'));
   // runTool exits the process on failure, so clean up from the exit hook.
-  process.on('exit', () => fs.rmSync(workdir, { recursive: true, force: true }));
+  process.on('exit', () => {
+    if (keepWorkDir) console.error(`merv: work directory kept at ${workdir}`);
+    else fs.rmSync(workdir, { recursive: true, force: true });
+  });
 
   // vivliostyle reinstalls <cwd>/themes on every build, so the directory cannot
   // be shared live between runs -- two installs racing in it fail with ENOTEMPTY.
@@ -297,6 +371,7 @@ function main() {
   const base = input.endsWith('.md') ? input.slice(0, -3) : input;
   const pdf = output ? path.resolve(output) : path.resolve(base + '.pdf');
   const outMd = path.join(workdir, 'out.md');
+  const builtPdf = path.join(workdir, 'out.pdf');
 
   // Config tokens go last so they can override the arguments merv chose for the
   // options where the child tool lets the last occurrence win.
@@ -315,9 +390,15 @@ function main() {
   runTool(
     '@vivliostyle/cli',
     'vivliostyle',
-    ['build', outMd, '-s', 'A4', '-T', theme, '-o', pdf, ...config.vivliostyle],
+    ['build', outMd, '-s', 'A4', '-T', theme, '-o', builtPdf, ...config.vivliostyle],
     workdir
   );
+  try {
+    commitPdf(builtPdf, pdf);
+  } catch (err) {
+    console.error(err.message);
+    process.exit(1);
+  }
 
   // Swap the freshly installed themes in so the next run starts from them. The
   // gap where no cache exists is a rename apart, and a run that hits it just
