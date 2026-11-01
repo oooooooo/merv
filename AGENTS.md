@@ -55,9 +55,19 @@ undoing any of them.
   transitive dependencies only apply in this repository; users get them
   through the shrinkwrap. npm 12 neither writes the file nor packs it, so
   after any dependency change run `cp package-lock.json npm-shrinkwrap.json`
-  (`test/deps.test.mjs` fails until you do), and publish with
-  `npx npm@11 publish`. Where npm is set to `ignore-scripts`, as on the
-  maintainer's machine, `prepublishOnly` does not run: run `npm test` first.
+  (`test/deps.test.mjs` fails until you do).
+- **Publish from a fresh clone, with npm 11:**
+
+  ```sh
+  git clone . /tmp/merv-release && cd /tmp/merv-release
+  npm ci && npm test && npx npm@11 publish
+  ```
+
+  npm packs any `README.*` whatever `files` or `.npmignore` say, so the
+  gitignored `README.pdf` a local `merv README.md` leaves behind would ship
+  from a working copy. Where npm is set to `ignore-scripts`, as on the
+  maintainer's machine, `prepublishOnly` does not run, hence the explicit
+  `npm test`.
 - **`bin` is `merv.js`, not `./merv.js`.** npm strips a `./` target while
   publishing, which would ship a package with no command.
 
