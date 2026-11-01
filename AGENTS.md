@@ -43,6 +43,13 @@ undoing any of them.
   off `process.on('exit')` because `runTool` calls `process.exit`.
 - **Config tokens are appended after merv's own arguments** so they win where
   the child tool lets the last occurrence win.
+- **Local stylesheets are copied into the workdir, not just made absolute.**
+  vivliostyle serves the document from a server rooted at its cwd and answers
+  404 for anything outside, so an absolute path to a CSS theme builds with the
+  theme silently missing.
+- **`@vivliostyle/vfm` is a direct dependency pinned to the version
+  `@vivliostyle/cli` pins.** merv asks it what is code so that it agrees with
+  the renderer; `test/deps.test.mjs` fails when a CLI bump leaves them apart.
 - **`bin` is `merv.js`, not `./merv.js`.** npm strips a `./` target while
   publishing, which would ship a package with no command.
 

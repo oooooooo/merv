@@ -57,14 +57,25 @@ inline code: \`![c](./img.png)\`
 \`\`\`md
 ![fenced](./img.png)
 \`\`\`
+
+    ![indented](./img.png)
+
+span with backticks: \`\` a \` ![b](./img.png) \`\`
+
+span across lines: \`a
+![wrapped](./img.png)\`
 `;
 
 const mdPath = path.join(workdir, 'out.md');
 fs.writeFileSync(mdPath, input);
 
 try {
-  prepareMarkdown(mdPath, srcDir, workdir);
+  const { missing } = prepareMarkdown(mdPath, srcDir, workdir);
   const md = fs.readFileSync(mdPath, 'utf8');
+
+  // A missing image still builds, so it has to be reported; a URL, a data URI
+  // and mermaid-cli's own output are not missing.
+  assert.deepEqual(missing, ['./nope.png'], 'only the missing local file should be reported');
   const line = (label) => md.split('\n').find((l) => l.startsWith(label));
 
   for (const label of [
@@ -93,6 +104,10 @@ try {
   assert.equal(line('missing:'), 'missing: ![n](./nope.png)');
   assert.equal(line('inline code:'), 'inline code: `![c](./img.png)`');
   assert.ok(md.includes('![fenced](./img.png)'), 'fenced code blocks should be left alone');
+  // Code the old line-based scanner did not recognise as code.
+  assert.ok(md.includes('    ![indented](./img.png)'), 'indented code should be left alone');
+  assert.ok(md.includes('`` a ` ![b](./img.png) ``'), 'a span with a backtick inside should be left alone');
+  assert.ok(md.includes('![wrapped](./img.png)`'), 'a span across lines should be left alone');
 
   const copied = fs.readdirSync(path.join(workdir, '_assets'));
   assert.ok(copied.length > 0, 'assets should be copied into the workdir');

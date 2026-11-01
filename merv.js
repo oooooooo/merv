@@ -66,6 +66,9 @@ function runTool(pkgName, binName, args, cwd) {
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
+// Where a reference in the intermediate markdown points: 'workdir' when it
+// already resolves there, the source file to copy in, or null when it resolves
+// nowhere.
 function resolveAsset(ref, srcDir, workdir) {
   const candidates = [ref];
   try {
@@ -74,7 +77,7 @@ function resolveAsset(ref, srcDir, workdir) {
   for (const candidate of candidates) {
     // mermaid-cli writes the diagrams it extracted next to the intermediate
     // markdown, so those references already resolve and must be left alone.
-    if (fs.existsSync(path.resolve(workdir, candidate))) return null;
+    if (fs.existsSync(path.resolve(workdir, candidate))) return 'workdir';
     const abs = path.resolve(srcDir, candidate);
     if (fs.existsSync(abs) && fs.statSync(abs).isFile()) return abs;
   }
@@ -83,16 +86,19 @@ function resolveAsset(ref, srcDir, workdir) {
 
 // Rework the markdown mermaid-cli produced into something vivliostyle can render
 // from the workdir: copy in the assets it still points at outside, and turn the
-// page break markers into elements vivliostyle breaks on.
+// page break markers into elements vivliostyle breaks on. Returns the local
+// references that resolved nowhere.
 export function prepareMarkdown(mdPath, srcDir, workdir) {
   const assetsDir = path.join(workdir, '_assets');
   const copies = new Map();
+  const missing = new Set();
 
   const rewrite = (ref) => {
     if (/^[a-z][a-z0-9+.-]*:/i.test(ref) || ref.startsWith('//') || ref.startsWith('#')) return ref;
     if (copies.has(ref)) return copies.get(ref);
     const abs = resolveAsset(ref, srcDir, workdir);
-    if (!abs) return ref;
+    if (abs === null) missing.add(ref);
+    if (abs === null || abs === 'workdir') return ref;
     // Flatten and sanitize: the copy has to sit under the workdir with a name
     // that needs no URL escaping, whatever the source path looked like.
     const name = `${copies.size}-${path.basename(abs).replace(/[^\w.-]/g, '_')}`;
@@ -112,14 +118,13 @@ export function prepareMarkdown(mdPath, srcDir, workdir) {
   if (DIAGRAM_REF.test(md)) rules.push(DIAGRAM_CSS);
   const style = rules.length ? `\n<style>\n${rules.join('\n')}\n</style>\n` : '';
   fs.writeFileSync(mdPath, md + style);
+  return { missing: [...missing] };
 }
 
 // `![alt](dest)`, allowing one level of brackets in the alt text.
 const INLINE_IMAGE = /(!\[(?:[^[\]]|\[[^\]]*\])*\]\(\s*)(<[^>]*>|[^()\s]*)/g;
 const REFERENCE_DEFINITION = /^(\s{0,3}\[[^\]]+\]:\s*)(<[^>]*>|\S+)/;
 const HTML_SRC = /(<img\b[^>]*?\bsrc\s*=\s*)("[^"]*"|'[^']*'|[^\s>]+)/gi;
-const FENCE = /^ {0,3}(`{3,}|~{3,})/;
-const CODE_SPAN = /(`+[^`]*`+)/;
 const PAGE_BREAK = /<!--\s*pagebreak\s*-->/gi;
 const PAGE_BREAK_HTML = '<div class="merv-pagebreak"></div>';
 // Written into the document so the break outranks the theme's own page rules.
@@ -159,7 +164,7 @@ function transformMarkdown(md, rewrite) {
 
   // A break with nothing on the page before it -- at the top of the document,
   // or right after another break -- would only produce a blank page, so it is
-  // dropped. Frontmatter is not content: it renders to nothing.
+  // dropped.
   let pageHasContent = false;
   const breakPages = (text) =>
     text
@@ -172,48 +177,51 @@ function transformMarkdown(md, rewrite) {
       })
       .join('');
 
-  const lines = md.split('\n');
-  let frontmatterEnd = -1;
-  if (lines[0] === '---') {
-    const close = lines.findIndex((line, i) => i > 0 && /^(---|\.\.\.)$/.test(line));
-    if (close > 0) frontmatterEnd = close;
-  }
+  const rewriteProse = (text, startsLine) =>
+    text
+      .split('\n')
+      .map((line, i) => {
+        const rewritten = breakPages(line)
+          .replace(INLINE_IMAGE, (_, head, dest) => head + swap(dest))
+          .replace(HTML_SRC, (_, head, dest) => head + swapAttribute(dest));
+        // A definition is only one if it opens the line, which the first line
+        // of a stretch that follows a code span does not.
+        return i > 0 || startsLine
+          ? rewritten.replace(REFERENCE_DEFINITION, (_, head, dest) => head + swap(dest))
+          : rewritten;
+      })
+      .join('\n');
 
-  let fence = null;
-  return lines
-    .map((line, lineIndex) => {
-      if (lineIndex <= frontmatterEnd) return line;
-      // Code is quoted markdown, not markup: rewriting it would corrupt a
-      // document that happens to be about writing markdown.
-      const fenceMatch = line.match(FENCE);
-      if (fence) {
-        if (fenceMatch && fenceMatch[1].startsWith(fence)) fence = null;
-        return line;
-      }
-      if (fenceMatch) {
-        fence = fenceMatch[1];
-        pageHasContent = true;
-        return line;
-      }
-      return line
-        .split(CODE_SPAN)
-        .map((part, i) => {
-          if (i % 2 === 1) {
-            pageHasContent = true;
-            return part;
-          }
-          const rewritten = breakPages(part)
-            .replace(INLINE_IMAGE, (_, head, dest) => head + swap(dest))
-            .replace(HTML_SRC, (_, head, dest) => head + swapAttribute(dest));
-          // A definition is only one if it opens the line, and only the first
-          // part of the split still knows where the line began.
-          return i === 0
-            ? rewritten.replace(REFERENCE_DEFINITION, (_, head, dest) => head + swap(dest))
-            : rewritten;
-        })
-        .join('');
-    })
-    .join('\n');
+  let out = '';
+  let at = 0;
+  for (const { start, end, content } of verbatimRanges(md)) {
+    out += rewriteProse(md.slice(at, start), at === 0 || md[at - 1] === '\n');
+    out += md.slice(start, end);
+    if (content) pageHasContent = true;
+    at = end;
+  }
+  return out + rewriteProse(md.slice(at), at === 0 || md[at - 1] === '\n');
+}
+
+// The stretches of the document to copy through untouched. Code is quoted
+// markdown, not markup: rewriting it would corrupt a document that happens to
+// be about writing markdown. Frontmatter is data, and renders to nothing.
+// Finding them is left to VFM, the parser vivliostyle itself renders with, since
+// a hand-written scanner kept disagreeing with it -- over indented code, code
+// spans across lines, and spans with backticks inside.
+function verbatimRanges(md) {
+  const { VFM } = createRequire(import.meta.url)('@vivliostyle/vfm');
+  const ranges = [];
+  const visit = (node) => {
+    if (node.type === 'code' || node.type === 'inlineCode' || node.type === 'yaml') {
+      const { start, end } = node.position;
+      ranges.push({ start: start.offset, end: end.offset, content: node.type !== 'yaml' });
+      return;
+    }
+    for (const child of node.children ?? []) visit(child);
+  };
+  visit(VFM().parse(md));
+  return ranges.sort((a, b) => a.start - b.start);
 }
 
 const CONFIG_NAMES = ['merv.json', '.merv.json'];
@@ -301,6 +309,59 @@ function parseArgs(argv) {
   return { theme, output, input, keepWorkDir };
 }
 
+// The vivliostyle build options whose value names a file. -T takes several.
+const PATH_OPTIONS = new Set([
+  '-T',
+  '--theme',
+  '--style',
+  '--user-style',
+  '-c',
+  '--config',
+  '--executable-browser',
+  '--vite-config-file',
+]);
+const MULTI_VALUE_OPTIONS = new Set(['-T', '--theme']);
+// The ones whose file the browser loads from vivliostyle's server.
+const SERVED_OPTIONS = new Set(['-T', '--theme', '--style', '--user-style']);
+
+// Point the file values among vivliostyle tokens at something vivliostyle can
+// use from the workdir it runs in. A relative path is resolved against baseDir,
+// and only when it exists there: the same options take package names
+// (-T @vivliostyle/theme-slide) and URLs (--style), which have to pass as
+// written. A stylesheet file is copied into the workdir as well, because the
+// server vivliostyle loads it through is rooted there and answers 404 for
+// anything outside -- an absolute path is not enough. A directory theme is
+// installed by vivliostyle itself, so its absolute path is.
+export function resolvePathArgs(tokens, baseDir, workdir) {
+  let copies = 0;
+  const resolve = (option, value) => {
+    const abs = path.resolve(baseDir, value);
+    if (!fs.existsSync(abs)) return value;
+    if (!SERVED_OPTIONS.has(option) || !fs.statSync(abs).isFile()) return abs;
+    const dir = path.join(workdir, '_styles');
+    fs.mkdirSync(dir, { recursive: true });
+    const copy = path.join(dir, `${copies++}-${path.basename(abs).replace(/[^\w.-]/g, '_')}`);
+    fs.copyFileSync(abs, copy);
+    return copy;
+  };
+  let option = null;
+  return tokens.map((token) => {
+    const joined = token.match(/^(--[\w-]+)=([\s\S]*)$/);
+    if (joined) {
+      option = null;
+      return PATH_OPTIONS.has(joined[1]) ? `${joined[1]}=${resolve(joined[1], joined[2])}` : token;
+    }
+    if (token.startsWith('-')) {
+      option = PATH_OPTIONS.has(token) ? token : null;
+      return token;
+    }
+    if (!option) return token;
+    const current = option;
+    if (!MULTI_VALUE_OPTIONS.has(option)) option = null;
+    return resolve(current, token);
+  });
+}
+
 // Move the PDF vivliostyle wrote in the workdir to where it was asked for. Up to
 // here a failed build has left any earlier PDF at that path alone, and this
 // keeps it that way: the copy lands next to the target and is renamed over it,
@@ -384,13 +445,27 @@ function main() {
     workdir,
     ...config.mermaid,
   ]);
-  prepareMarkdown(outMd, srcDir, workdir);
+  // A missing image still builds, as Chrome's broken-image icon, so the exit
+  // status alone would never tell the user.
+  const { missing } = prepareMarkdown(outMd, srcDir, workdir);
+  for (const ref of missing) console.error(`merv: referenced file not found: ${ref} (looked in ${srcDir})`);
   // Run from workdir: vivliostyle auto-loads vivliostyle.config.* from its cwd,
   // and such a config would override the entry/output we pass on the command line.
+  // That same move would send a relative theme or stylesheet looking in the
+  // workdir, so those are resolved first, against the directory mermaid-cli's
+  // relative paths are already resolved against.
   runTool(
     '@vivliostyle/cli',
     'vivliostyle',
-    ['build', outMd, '-s', 'A4', '-T', theme, '-o', builtPdf, ...config.vivliostyle],
+    [
+      'build',
+      outMd,
+      '-s',
+      'A4',
+      '-o',
+      builtPdf,
+      ...resolvePathArgs(['-T', theme, ...config.vivliostyle], process.cwd(), workdir),
+    ],
     workdir
   );
   try {

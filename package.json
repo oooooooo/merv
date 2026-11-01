@@ -30,7 +30,8 @@
   "author": "oooooooo",
   "dependencies": {
     "@mermaid-js/mermaid-cli": "11.16.0",
-    "@vivliostyle/cli": "11.1.0"
+    "@vivliostyle/cli": "11.1.0",
+    "@vivliostyle/vfm": "2.7.0"
   },
   "license": "MIT",
   "keywords": [

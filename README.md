@@ -66,6 +66,19 @@ PDF is checked for a header and end marker before it replaces the old one.
 `mermaid-cli` produced, the diagrams, and the copied images — and prints the
 directory, which is the place to look when a PDF comes out wrong.
 
+An image or other local file the document points at but `merv` cannot find
+next to it is reported on stderr. The build still goes ahead, since the PDF
+is otherwise fine, so watch for the warning.
+
+### Local themes and stylesheets
+
+`-T ./my-theme.css`, and paths in a config's `-T`, `--style` and
+`--user-style`, are resolved against the current directory, the same as the
+paths `mermaid-cli` is given. A stylesheet file is copied in alongside the
+document, so one that pulls in other files by relative path — `@import`,
+fonts, background images — loses them. Give such a theme as a directory with
+a `package.json` instead, which `vivliostyle` installs whole.
+
 ### Page breaks
 
 Write `<!-- pagebreak -->` to start a new page there:
@@ -79,9 +92,9 @@ The start of the next.
 ```
 
 The marker is matched case-insensitively, works with any theme, and is
-ignored inside code blocks and code spans. A marker with nothing before it on
-its page — at the start of the document, or right after another marker — is
-dropped rather than leaving a blank page.
+ignored inside code — fenced or indented blocks and code spans. A marker
+with nothing before it on its page — at the start of the document, or right
+after another marker — is dropped rather than leaving a blank page.
 
 ### Diagrams
 
