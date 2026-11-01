@@ -123,6 +123,11 @@ Both keys are optional. Filenames and search order:
 - **First match wins** — later files are ignored, not merged.
 - Config args are appended after `merv`'s own, so where the last occurrence
   wins, the config wins — including over `-T` on the command line.
+- Relative paths in a config are resolved against the current directory, not
+  the directory the config sits in — the same rule `mermaid-cli` follows for
+  its arguments and `vivliostyle` for its own `vivliostyle.config.js`. A
+  config in `$HOME` or `$XDG_CONFIG_HOME` that names a file should use an
+  absolute path.
 
 Treat a `merv.json` from a cloned repository like any other executable
 content: it sets arguments for the browser-driving tools `merv` runs.
