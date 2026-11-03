@@ -15,7 +15,8 @@
   },
   "scripts": {
     "test": "node --test --test-concurrency=1 \"test/*.test.mjs\"",
-    "prepublishOnly": "npm test"
+    "prepublishOnly": "npm test",
+    "install:bin": "dir=$(mktemp -d) && git clone -q . \"$dir\" && (cd \"$dir\" && npx -y npm@11 pack -q >/dev/null && npx -y npm@11 install -g --prefix \"$HOME\" ./*.tgz); rc=$?; rm -rf \"$dir\"; exit $rc"
   },
   "repository": {
     "type": "git",

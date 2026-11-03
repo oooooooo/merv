@@ -68,6 +68,11 @@ undoing any of them.
   from a working copy. Where npm is set to `ignore-scripts`, as on the
   maintainer's machine, `prepublishOnly` does not run, hence the explicit
   `npm test`.
+- **`npm run install:bin` installs the committed `HEAD` into `~/bin`** the
+  same way: from a fresh clone, packed by npm 11, from the tarball. Installing
+  the directory itself would only symlink the working copy. The script must not
+  be named `install`, a lifecycle script that would run whenever anyone
+  installs the package, and recursively on `npm install` here.
 - **`bin` is `merv.js`, not `./merv.js`.** npm strips a `./` target while
   publishing, which would ship a package with no command.
 
